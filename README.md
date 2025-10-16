@@ -15,7 +15,7 @@ To use this plugin, You'll need to do a few things:
 1. Get [KoReader](https://github.com/koreader/koreader) installed on your e-reader/device.
 2. Grab the latest release of this plugin, or clone the repository.
 3. Acquire an API key from an API account on OpenAI. You need to add some credits to your account, but from experience I can tell you that the personal use of this plugin is practically free (mainly because it uses GPT5 mini—a fast and cheap AI model), so your credits probably won't be spent.
-4. Once you have your API key, create a `configuration.lua` file in the following structure or modify and rename the `configuration.lua.sample` file. Replace YOUR_API_KEY with your own API key.
+4. Once you have your API key, create a `configuration.lua` file in the following structure or modify and rename the `configuration.lua.sample` file. Replace YOUR_API_KEY with your own API key, and put the resulting file inside `AI_Dictionary.koplugin`.
 
 ```lua
 local CONFIGURATION = {
@@ -25,7 +25,8 @@ local CONFIGURATION = {
 return CONFIGURATION
 ```
 4. Copy the folder named `AI_Dictionary.koplugin` into the `koreader/plugins` directory on your device.
-5. The plugin is ready! Now simply select some text, and use one of the options the plugins gives you ("AI Dictionary", "AI Explain", "English Explain") to get answers. You'll probably want to disable the automatic launch of KOReader's default dictionary functionality on single-word selection by opening KOReader's top menu (tap on the top part of the screen), going to `Settings` (the gear icon), selecting `Long-press on text` and disabling `Dictionary on single word selection`.
+5. You'll most probably want to disable the automatic launch of KOReader's default dictionary functionality on single-word selection. To do that, open KOReader's top menu (tap on the top part of the screen), go to `Settings` (the gear icon), select `Long-press on text` and disable `Dictionary on single word selection`.
+6. You are all set! Now simply select some word(s)/text, and use one of the options the plugins gives you ("AI Dictionary", "AI Explain", "English Explain") to get answers.
 
 
 ## What's Next?
@@ -33,6 +34,7 @@ return CONFIGURATION
 I'm calling on the community to help expand this plugin with features that you think might help others read/study/learn better. Here are a few starters:
 1. Add Gemini API as an option, to give the users more choice
 2. Add a nice log file of every word/selection the user has looked up so far
+3. The plugin is structured around English-to-English dictionaries. It might make sense to support other languages in the future. Making it seamless is the main challenge.
 
 This plugin wouldn't have been possible without the backbone provided by [AskGPT]("https://github.com/drewbaumann/AskGPT)—an excellent plugin that lets you talk to ChatGPT directly from inside KOReader. Open source is awesome!
 
