@@ -13,7 +13,7 @@ To use this plugin, You'll need to do a few things:
 
 1. Get [KoReader](https://koreader.rocks/) installed on your e-reader/device.
 2. Grab the latest release of this plugin, or clone the repository.
-3. Acquire an API key from an API account on OpenAI. You need to add some credits to your account, but from experience I can tell you that the personal use of this plugin is practically free (mainly because it uses GPT5 mini—a fast and cheap AI model), so your credits probably won't be spent.
+3. Acquire an API key from [the OpenAI platform](https://platform.openai.com/). You probably need to add some credits to your account, but from experience I can tell you that the personal use of this plugin is practically free (mainly because it uses GPT5 Mini—a fast and cheap AI model). For reference, my own personal use over seven days cost me about 1 cent in OpenAI credits.
 4. Once you have your API key, create a `configuration.lua` file in the following structure or modify and rename the `configuration.lua.sample` file. Replace YOUR_API_KEY with your own API key, and put the resulting file inside `AI_Dictionary.koplugin`.
 
 ```lua
@@ -34,6 +34,6 @@ I'm calling on you—the community—to help expand this plugin with features th
 2. Add a nice log file of every word/selection the user has looked up so far
 3. The plugin is built around English-to-English dictionary lookups, though supporting other languages in the future might make sense. Making it seamless is the main challenge.
 
-This plugin wouldn't have been possible without the backbone provided by [AskGPT]("https://github.com/drewbaumann/AskGPT")—an excellent plugin that lets you talk to ChatGPT directly from inside KOReader. Open source is awesome!
+This plugin wouldn't have been possible without the backbone provided by [AskGPT](https://github.com/drewbaumann/AskGPT)—an excellent plugin that lets you talk to ChatGPT directly from inside KOReader. Open source is awesome!
 
 License: GPLv3
