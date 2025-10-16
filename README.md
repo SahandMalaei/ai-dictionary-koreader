@@ -7,6 +7,8 @@ AI Dictionary is a dictionary/explanation plugin for KOReader that can have a tr
 
 AI Dictionary gives you the meaning of your selected text **in the context** of its surrounding words, and also **in the context of the book you are reading**. You can ask for the definition of any number of words, ask it to explain text in the context of the book, or to turn the selected text into more simplified English. All of that is available at the press of a button with no need to type anything. All the back-and-forth with the AI is done in the background, for a most seamless reading/learning experience.
 
+![Demo](demo.gif)
+
 ## How to Use
 
 To use this plugin, You'll need to do a few things:
