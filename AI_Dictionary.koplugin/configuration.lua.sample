@@ -1,0 +1,5 @@
+local CONFIGURATION = {
+    api_key = "YOUR OPENAI API KEY",
+}
+
+return CONFIGURATION
