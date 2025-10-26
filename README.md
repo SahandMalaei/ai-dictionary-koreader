@@ -14,7 +14,7 @@ AI Dictionary gives you the meaning of your selected text **in the context** of 
 To use this plugin, You'll need to do a few things:
 
 1. Get [KoReader](https://koreader.rocks/) installed on your e-reader/device.
-2. Grab the latest release of this plugin, or clone the repository.
+2. Download [the latest release of this plugin](https://github.com/SahandMalaei/ai-dictionary-koreader/releases/latest).
 3. Acquire an API key from [the OpenAI platform](https://platform.openai.com/). You probably need to add some credits to your account, but from experience I can tell you that the personal use of this plugin is practically free (mainly because it uses GPT5 Mini—a fast and cheap AI model). For reference, my own personal use over seven days cost me about 1 cent in OpenAI credits.
 4. Once you have your API key, create a `configuration.lua` file in the following structure or modify and rename the `configuration.lua.sample` file. Replace YOUR_API_KEY with your own API key, and put the resulting file inside `AI_Dictionary.koplugin`.
 

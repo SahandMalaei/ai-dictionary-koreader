@@ -133,7 +133,7 @@ function AskGPT:init()
             "I'm an advanced learner of English. I'm reading '%s' by '%s'. My selected text: \n'%s'\n"..
             "This is the context where it appears: '...%s...'\n" ..
             "ONLY for the selected text, give me an informative dictionary-style answer in this format ONCE and add nothing more:\n" ..
-            "/[THE ONE most standard US pronunciation in phonetic alphabet]/\n\n" ..
+            "/[ACCURATE and CORRECT American (US) English pronunciation in the form of IPA]/\n\n" ..
             "Definition: [Definition in under 20 words]\n\n" ..
             "Synonyms: [Up to 3 synonyms, if any exists. If there are no synonyms skip this section]\n\n" ..
             "Etymology: [Helpful etymology in under 20 words]")

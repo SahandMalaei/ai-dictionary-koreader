@@ -25,18 +25,18 @@ local json = require("json")
 local function queryChatGPT(message_history)
   -- Use api_key from CONFIGURATION or fallback to the api_key module
   local api_key_value = CONFIGURATION and CONFIGURATION.api_key or api_key
-  local api_url = "https://api.openai.com/v1/chat/completions"
-  local model = "gpt-5-nano"
+  --local api_url = "https://api.openai.com/v1/chat/completions"
+  local api_url = "https://openrouter.ai/api/v1/chat/completions"
+  --local model = "gpt-5-nano"
+  local model = "google/gemini-2.5-flash-lite"
 
   -- Start building the request body
   local requestBodyTable = {
-    model = "gpt-5-mini",
-    reasoning_effort = "minimal",
-    verbosity = "low",
+    --model = "gpt-5-mini",
+    model = "google/gemini-2.5-flash-lite",
+    --reasoning_effort = "minimal",
+    --verbosity = "low",
     messages = message_history
-    --messages = {
-      --{role = "user", content = "Define 'free will' in 1 line."}
-    --}
   }
 
   -- Add additional parameters if they exist
