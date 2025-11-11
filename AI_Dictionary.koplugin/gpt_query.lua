@@ -19,8 +19,14 @@ end
 
 -- Define your queryChatGPT function
 local https = require("ssl.https")
+local http = require("socket.http") -- needed to cap the pre-SSL socket connect phase
 local ltn12 = require("ltn12")
 local json = require("json")
+
+local REQUEST_TIMEOUT_SECONDS = 3
+
+https.TIMEOUT = REQUEST_TIMEOUT_SECONDS -- fail fast once TLS session exists
+http.TIMEOUT = REQUEST_TIMEOUT_SECONDS -- also cap DNS lookup + TCP connect latency
 
 local function queryChatGPT(message_history)
   -- Use api_key from CONFIGURATION or fallback to the api_key module
@@ -57,15 +63,12 @@ local function queryChatGPT(message_history)
 
   local responseBody = {}
 
-  -- Make the HTTPS request
-  https.TIMEOUT = 10
-
   local ok, code, responseHeaders, status_line = https.request {
     url = api_url,
     method = "POST",
     headers = headers,
     source = ltn12.source.string(requestBody),
-    sink = ltn12.sink.table(responseBody),
+    sink = ltn12.sink.table(responseBody)
   }
 
   if tostring(code) ~= "200" then
