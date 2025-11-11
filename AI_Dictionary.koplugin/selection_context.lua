@@ -85,7 +85,7 @@ function get_selection_in_context2(document, selection, window)
 end
 
 function get_selection_in_context(document, selection, window)
-    window = window or 5
+    window = window or 10
     local page_text = get_page_text(document)
     if not page_text or not selection or selection == "" then
         return ""

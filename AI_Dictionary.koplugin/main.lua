@@ -32,6 +32,41 @@ local function capitalize_first(s)
     return (s:gsub("^%l", string.upper))
 end
 
+function AskGPT:getCurrentChapterName()
+    local ui = self.ui
+    local doc = ui and ui.document
+    if not (doc and doc.getToc) then return nil end
+
+    local toc = doc:getToc() or {}
+    if #toc == 0 then return nil end
+
+    local chapter
+    local has_pos = doc.getPos and doc.comparePositions
+    if has_pos then
+        local pos = doc:getPos()
+        for i = 1, #toc do
+            local e = toc[i]
+            if e.pos and doc:comparePositions(e.pos, pos) <= 0 then
+                chapter = e
+            else
+                break
+            end
+        end
+    elseif doc.getCurrentPage then
+        local page = doc:getCurrentPage()
+        for i = 1, #toc do
+            local e = toc[i]
+            if e.page and e.page <= page then
+                chapter = e
+            else
+                break
+            end
+        end
+    end
+
+    return chapter and chapter.title or nil
+end
+
 function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_selection, query)
   local ui = self.ui
   local title, author =
@@ -45,11 +80,18 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   local highlightedText = tostring(_reader_highlight_instance.selected_text.text) or "Nothing highlighted"
   --showLoadingDialog()
 
+  local chapter = ""
+  local triedChapterName = self:getCurrentChapterName()
+  if triedChapterName then
+    chapter = ", chapter/part '" .. triedChapterName .. "'"
+  end
+
   local safeTitle = clean_up_string(title, MAX_TITLE)
   local safeAuthor = clean_up_string(author, MAX_TITLE)
+  local safeChapter = clean_up_string(chapter, MAX_TITLE)
   local safeHighlightedText = clean_up_string(highlightedText, MAX_HL)
 
-  local selectionInContext = get_selection_in_context(self.ui.document, highlightedText)
+  local selectionInContext = get_selection_in_context(self.ui.document, highlightedText, 10)
   local safeSelectionInContext = clean_up_string(selectionInContext, MAX_HL)
 
   local titleCaseSelection = capitalize_first(safeHighlightedText)
@@ -85,7 +127,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
     local message_history = {
     {
       role = "user",
-      content = string.format(query, safeTitle, safeAuthor, safeHighlightedText, safeSelectionInContext)
+      content = string.format(query, safeTitle, safeAuthor, safeChapter, safeHighlightedText, safeSelectionInContext)
     }}
 
     local answer = queryChatGPT(message_history)
@@ -104,9 +146,10 @@ function AskGPT:init()
       enabled = Device:hasClipboard(),
       callback = function()
           self:Query(_reader_highlight_instance, "AI Explain", false,
-            "I'm an advanced learner of English. I'm reading '%s' by '%s'. This is my highlighted text: \n'%s'\n" ..
+            "I'm reading '%s' by '%s'%s. This is my highlighted text: \n'%s'\n" ..
             "This is the context where it appears: '...%s...'\n" ..
-            "Explain it in the context/lore of the book, and help me understand it better. Keep your explanation concise and brief (under 50 words), and ask no questions at the end.")
+            "Explain it in the context/lore of the book, and help me understand it better (like Amazon Kindle's X-Ray, but much more concise)." ..
+            "No spoilers if it's fiction. Plain text. Keep your explanation concise and brief (under 80 words), and ask no questions at the end.")
       end,
     }
   end)
@@ -117,7 +160,7 @@ function AskGPT:init()
       enabled = Device:hasClipboard(),
       callback = function()
           self:Query(_reader_highlight_instance, "AI English Explain", false,
-            "I'm an advanced learner of English. I'm reading '%s' by '%s'. This is my highlighted text: \n'%s'\n" ..
+            "I'm an advanced learner of English. I'm reading '%s' by '%s'%s. This is my highlighted text: \n'%s'\n" ..
             "This is the context where it appears: '...%s...'\n" ..
             "Explain its meaning in simple understandable English. Keep your explanation brief and under 30 words.")
       end,
@@ -130,7 +173,7 @@ function AskGPT:init()
       enabled = Device:hasClipboard(),
       callback = function()
           self:Query(_reader_highlight_instance, "AI Dictionary", true,
-            "I'm an advanced learner of English. I'm reading '%s' by '%s'. My selected text: \n'%s'\n"..
+            "I'm an advanced learner of English. I'm reading '%s' by '%s'%s. My selected text: \n'%s'\n"..
             "This is the context where it appears: '...%s...'\n" ..
             "ONLY for the selected text, give me an informative dictionary-style answer in this format ONCE and add nothing more:\n" ..
             "/[ACCURATE and CORRECT American (US) English pronunciation in the form of IPA]/\n\n" ..
