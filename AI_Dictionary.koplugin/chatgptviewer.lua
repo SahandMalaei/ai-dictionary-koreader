@@ -66,6 +66,8 @@ local ChatGPTViewer = InputContainer:extend {
   find_centered_lines_count = 5, -- line with find results to be not far from the center
 
   onAskQuestion = nil,
+
+  benedict = nil
 }
 
 function ChatGPTViewer:init()
@@ -188,6 +190,13 @@ function ChatGPTViewer:init()
   -- buttons
   local default_buttons =
   {
+    {
+      text = _("↻"),
+      callback = function()
+        self:Regenerate()
+      end,
+      hold_callback = self.default_hold_callback,
+    },
     {
       text = _("Close"),
       callback = function()
@@ -344,6 +353,10 @@ function ChatGPTViewer:onClose()
   return true
 end
 
+function ChatGPTViewer:Regenerate()
+  self.benedict:Regenerate(self)
+end
+
 function ChatGPTViewer:onSwipe(arg, ges)
   if ges.pos:intersectWith(self.textw.dimen) then
     local direction = BD.flipDirectionIfMirroredUILayout(ges.direction)
@@ -439,9 +452,11 @@ function ChatGPTViewer:update(new_text)
     height = self.height,
     buttons_table = self.buttons_table,
     onAskQuestion = self.onAskQuestion,
+    benedict = self.benedict
   }
   updated_viewer.scroll_text_w:scrollToBottom()
   UIManager:show(updated_viewer)
+  return updated_viewer
 end
 
 return ChatGPTViewer

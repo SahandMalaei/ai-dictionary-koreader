@@ -67,6 +67,11 @@ function AskGPT:getCurrentChapterName()
     return chapter and chapter.title or nil
 end
 
+local lastQuery = ""
+local lastPrefaceWithSelection = false
+local lastTitleCaseSelection = ""
+local waitMessage = "Getting the answer..."
+
 function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_selection, query)
   local ui = self.ui
   local title, author =
@@ -95,8 +100,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   local safeSelectionInContext = clean_up_string(selectionInContext, MAX_HL)
 
   local titleCaseSelection = capitalize_first(safeHighlightedText)
-
-  local waitMessage = "Getting the answer..."
+  lastTitleCaseSelection = titleCaseSelection
 
   local online = NetworkMgr:isOnline()
 
@@ -107,7 +111,8 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   local chatgpt_viewer = ChatGPTViewer:new {
     title = dialog_title,
     text = string.format(waitMessage),
-    onAskQuestion = nil
+    onAskQuestion = nil,
+    benedict = self
   }
 
   ui.highlight:onClose()
@@ -123,11 +128,14 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
     return
   end
 
+  lastQuery = string.format(query, safeTitle, safeAuthor, safeChapter, safeHighlightedText, safeSelectionInContext)
+  lastPrefaceWithSelection = preface_with_selection
+
   UIManager:scheduleIn(0.01, function()
     local message_history = {
     {
       role = "user",
-      content = string.format(query, safeTitle, safeAuthor, safeChapter, safeHighlightedText, safeSelectionInContext)
+      content = lastQuery
     }}
 
     local answer = queryChatGPT(message_history)
@@ -135,6 +143,25 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
       chatgpt_viewer:update(string.format("%s %s", titleCaseSelection, answer))
     else
       chatgpt_viewer:update(string.format("%s %s", "", answer))
+    end
+  end)
+end
+
+function AskGPT:Regenerate(chatgpt_viewer)
+  local updatedViewer = chatgpt_viewer:update(waitMessage)
+
+  UIManager:scheduleIn(0.01, function()
+    local message_history = {
+    {
+      role = "user",
+      content = lastQuery
+    }}
+
+    local answer = queryChatGPT(message_history)
+    if lastPrefaceWithSelection then
+      updatedViewer:update(string.format("%s %s", lastTitleCaseSelection, answer))
+    else
+      updatedViewer:update(string.format("%s %s", "", answer))
     end
   end)
 end
