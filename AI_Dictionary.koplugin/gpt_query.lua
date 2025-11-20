@@ -29,30 +29,23 @@ https.TIMEOUT = REQUEST_TIMEOUT_SECONDS -- fail fast once TLS session exists
 http.TIMEOUT = REQUEST_TIMEOUT_SECONDS -- also cap DNS lookup + TCP connect latency
 
 local function queryChatGPT(message_history)
-  -- Use api_key from CONFIGURATION or fallback to the api_key module
   local api_key_value = CONFIGURATION and CONFIGURATION.api_key or api_key
-  --local api_url = "https://api.openai.com/v1/chat/completions"
-  local api_url = "https://openrouter.ai/api/v1/chat/completions"
-  --local model = "gpt-5-nano"
-  local model = "google/gemini-2.5-flash-lite"
+  local api_url = CONFIGURATION and CONFIGURATION.provider or "https://api.openai.com/v1/chat/completions"
+  local llm = CONFIGURATION and CONFIGURATION.model or "gpt-5-nano"
 
-  -- Start building the request body
   local requestBodyTable = {
-    --model = "gpt-5-mini",
-    model = "google/gemini-2.5-flash-lite",
+    model = llm,
     --reasoning_effort = "minimal",
     --verbosity = "low",
     messages = message_history
   }
 
-  -- Add additional parameters if they exist
   if CONFIGURATION and CONFIGURATION.additional_parameters then
     for key, value in pairs(CONFIGURATION.additional_parameters) do
       requestBodyTable[key] = value
     end
   end
 
-  -- Encode the request body as JSON
   local requestBody = json.encode(requestBodyTable)
 
   local headers = {

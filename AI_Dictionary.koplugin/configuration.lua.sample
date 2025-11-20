@@ -1,5 +1,7 @@
 local CONFIGURATION = {
-    api_key = "YOUR OPENAI API KEY",
+    api_key = "YOUR API KEY",
+    provider = "https://api.openai.com/v1/chat/completions",
+    model = "gpt-5-nano"
 }
 
 return CONFIGURATION
