@@ -202,8 +202,10 @@ function AskGPT:init()
           self:Query(_reader_highlight_instance, "AI Dictionary", true,
             "I'm an advanced learner of English. I'm reading '%s' by '%s'%s. My selected text: \n'%s'\n"..
             "This is the context where it appears: '...%s...'\n" ..
-            "ONLY for the selected text, give me an informative dictionary-style answer in this format ONCE and add nothing more:\n" ..
-            "/[ACCURATE and CORRECT American (US) English pronunciation in the form of IPA]/\n\n" ..
+            "ONLY for the selected text, give me an informative, context-aware, dictionary-style answer strictly in this format ONCE and add nothing more:\n" ..
+            "(v./n./idiom/etc.) " ..
+            "/[ACCURATE and CORRECT American (US) English pronunciation in the form of IPA]/ " ..
+            "([English alphabet pronunciation help American US English])\n\n" ..
             "Definition: [Definition in under 20 words]\n\n" ..
             "Synonyms: [Up to 3 synonyms, if any exists. If there are no synonyms skip this section]\n\n" ..
             "Etymology: [Helpful etymology in under 20 words]")
