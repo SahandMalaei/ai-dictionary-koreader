@@ -16,7 +16,7 @@ To use this plugin, You'll need to do a few things:
 1. Get [KoReader](https://koreader.rocks/) installed on your e-reader/device.
 2. Download [the latest release of this plugin](https://github.com/SahandMalaei/ai-dictionary-koreader/releases/latest).
 3. Acquire an API key from [the OpenAI platform](https://platform.openai.com/). You probably need to add some credits to your account, but from experience I can tell you that the personal use of this plugin is practically free (mainly because it uses GPT5 Mini—a fast and cheap AI model). For reference, my own personal use over seven days cost me about 1 cent in OpenAI credits.
-4. Once you have your API key, create a `configuration.lua` file in the following structure or modify and rename the `configuration.lua.sample` file. Replace YOUR_API_KEY with your own API key, and put the resulting file inside `AI_Dictionary.koplugin`.
+4. Once you have your API key, rename `configuration.lua.sample` to `configuration.lua` and inside it, replace `YOUR_API_KEY` with your own API key. **Optional**: Alternatively, you can use any OpenAI-compatible endpoint and model by setting them in `configuration.lua`. I personally use OpenRouter along with `Gemini-2.5-Flash-Lite` for the quickest results.
 
 ```lua
 local CONFIGURATION = {
@@ -25,9 +25,9 @@ local CONFIGURATION = {
 
 return CONFIGURATION
 ```
-4. Copy the folder named `AI_Dictionary.koplugin` into the `koreader/plugins` directory on your device.
-5. You'll most probably want to disable the automatic launch of KOReader's default dictionary functionality on single-word selection. To do that, open KOReader's top menu (tap on the top part of the screen), go to `Settings` (the gear icon), select `Long-press on text` and disable `Dictionary on single word selection`.
-6. You are all set! Now simply select some word(s)/text, and use one of the options the plugins gives you ("AI Dictionary", "AI Explain", "English Explain") to get answers.
+5. Copy the folder named `AI_Dictionary.koplugin` into the `koreader/plugins` directory on your device.
+6. You'll most probably want to disable the automatic launch of KOReader's default dictionary functionality on single-word selection. To do that, open KOReader's top menu (tap on the top part of the screen), go to `Settings` (the gear icon), select `Long-press on text` and disable `Dictionary on single word selection`.
+7. You are all set! Now simply select some word(s)/text, and use one of the options the plugins gives you ("AI Dictionary", "AI Explain", "English Explain") to get answers.
 
 ## What's Next?
 
