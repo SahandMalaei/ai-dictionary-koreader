@@ -34,9 +34,8 @@ return CONFIGURATION
 ## What's Next?
 
 I'm calling on you—the community—to help expand this plugin with features that might help others read/study/learn better. A few starters:
-1. Add Gemini API as an option, to give the users more choice
-2. Add a nice log file of every word/selection the user has looked up so far
-3. The plugin is built around English-to-English dictionary lookups, though supporting other languages in the future might make sense. Making it seamless is the main challenge.
+1. Add a nice log file of every word/selection the user has looked up so far
+2. The plugin is built around English-to-English dictionary lookups, though supporting other languages in the future might make sense. Making it seamless is the main challenge.
 
 This plugin wouldn't have been possible without the backbone provided by [AskGPT](https://github.com/drewbaumann/AskGPT)—an excellent plugin that lets you talk to ChatGPT directly from inside KOReader. Open source is awesome!
 
