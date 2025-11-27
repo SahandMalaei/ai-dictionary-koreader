@@ -11,16 +11,18 @@ AI Dictionary gives you the meaning of your selected text **in the context** of 
 
 ## How to Use
 
-To use this plugin, You'll need to do a few things:
+To use this plugin, You'll need to do a few things, which I've listed below.
 
 1. Get [KoReader](https://koreader.rocks/) installed on your e-reader/device.
 2. Download [the latest release of this plugin](https://github.com/SahandMalaei/ai-dictionary-koreader/releases/latest).
-3. Acquire an API key from [the OpenAI platform](https://platform.openai.com/). You probably need to add some credits to your account, but from experience I can tell you that the personal use of this plugin is practically free (mainly because it uses GPT5 Mini—a fast and cheap AI model). For reference, my own personal use over seven days cost me about 1 cent in OpenAI credits.
-4. Once you have your API key, rename `configuration.lua.sample` to `configuration.lua` and inside it, replace `YOUR_API_KEY` with your own API key. **Optional**: Alternatively, you can use any OpenAI-compatible endpoint and model by setting them in `configuration.lua`. I personally use OpenRouter along with `Gemini-2.5-Flash-Lite` for the quickest results.
+3. The default AI provider is OpenAI's ChatGPT. Acquire an API key from [the OpenAI platform](https://platform.openai.com/). **Optional**: Alternatively, you can use any OpenAI-compatible AI provider of your own. I personally use [OpenRouter](https://openrouter.ai/api/v1/chat/completions) along with Google's Gemini 2.5 Flash Lite for the quickest results. You probably need to add some credits to your account, but from experience I can tell you that the personal use of this plugin is practically free (as long as you use fast and cheap models such as GPT5-Nano or Gemini 2.5 Flash). For reference, my own personal use over seven days cost me about 2 cents.
+4. Once you have your API key, rename `configuration.lua.sample` to `configuration.lua` and inside it, replace `YOUR_API_KEY` with your own API key. **Optional**: Alternatively, you can use any OpenAI-compatible endpoint and model by setting them in `configuration.lua`. As said earlier, I personally use [OpenRouter](https://openrouter.ai/api/v1/chat/completions) along with `google/gemini-2.5-flash-lite` for the quickest results. For this, you need to fill out the `provider` and `model` properties of `configuration.lua` with values of your own.
 
 ```lua
 local CONFIGURATION = {
     api_key = "YOUR_API_KEY",
+    provider = "https://api.openai.com/v1/chat/completions",
+    model = "gpt-5-nano"
 }
 
 return CONFIGURATION
