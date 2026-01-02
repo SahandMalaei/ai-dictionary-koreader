@@ -207,6 +207,7 @@ function AskGPT:init()
             "/[ACCURATE and CORRECT American (US) English pronunciation in the form of IPA]/ " ..
             "([English alphabet pronunciation help American US English])\n\n" ..
             "Definition: [Definition in under 20 words]\n\n" ..
+            "Example: [A natural sentence that uses the word(s) in the same meaning and register, but in a different situation]\n\n" ..
             "Synonyms: [Up to 3 synonyms, if any exists. If there are no synonyms skip this section]\n\n" ..
             "Etymology: [Helpful etymology in under 20 words]")
       end,
