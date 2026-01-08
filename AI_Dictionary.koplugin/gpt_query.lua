@@ -65,7 +65,7 @@ local function queryChatGPT(message_history)
   }
 
   if tostring(code) ~= "200" then
-    return "Error querying ChatGPT API: " .. tostring(code) .. "\n\nResponse: " .. table.concat(responseBody) .. "\n\nRequest: " .. tostring(requestBody)
+    return "Error querying AI: " .. tostring(code) .. "\n\nResponse: " .. table.concat(responseBody) .. "\n\nRequest: " .. tostring(requestBody)
   else
     local response = json.decode(table.concat(responseBody))
     return response.choices[1].message.content-- .. "\n\nRequest: " .. tostring(requestBody)

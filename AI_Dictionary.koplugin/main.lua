@@ -185,7 +185,7 @@ function AskGPT:init()
 
   self.ui.highlight:addToHighlightDialog("aidictionary_2", function(_reader_highlight_instance)
     return {
-      text = _("AI English Explain"),
+      text = _("AI English Simplify"),
       enabled = Device:hasClipboard(),
       callback = function()
           self:Query(_reader_highlight_instance, "AI English Explain", false,
@@ -211,7 +211,7 @@ function AskGPT:init()
             "Definition: [Definition in under 20 words]\n\n" ..
             "Example: [A natural sentence that uses the word(s) in the same meaning and register, but in a different situation]\n\n" ..
             "Synonyms: [Up to 3 synonyms, if any exists. If there are no synonyms skip this section]\n\n" ..
-            "Etymology: [Helpful etymology in under 20 words]")
+            "Etymology: [Helpful etymology with a focus on the different parts that make up the word, in under 30 words]")
       end,
     }
   end)
