@@ -70,7 +70,7 @@ end
 local lastQuery = ""
 local lastPrefaceWithSelection = false
 local lastTitleCaseSelection = ""
-local waitMessage = "Getting the answer..."
+local waitMessage = ""
 
 function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_selection, query)
   local ui = self.ui
@@ -106,6 +106,8 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
 
   if not online then
     waitMessage = "You are offline. AI lookup requires an active internet connection."
+  else
+    waitMessage = "Getting the answer..."
   end
 
   local chatgpt_viewer = ChatGPTViewer:new {
