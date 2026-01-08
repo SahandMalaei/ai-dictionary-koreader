@@ -77,23 +77,23 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   local title, author =
     ui.document:getProps().title or "Unknown Title",
     ui.document:getProps().authors
-  if type(authors) == "table" then
-    authors = table.concat(authors, ", ")
+  if type(author) == "table" then
+    author = table.concat(author, ", ")
   end
-  authors = (authors and authors ~= "" and authors) or "Unknown Author"
+  author = (author and author ~= "" and author) or "Unknown Author"
 
   local highlightedText = tostring(_reader_highlight_instance.selected_text.text) or "Nothing highlighted"
   --showLoadingDialog()
 
-  local chapter = ""
+  local chapterClause = ""
   local triedChapterName = self:getCurrentChapterName()
   if triedChapterName then
-    chapter = ", chapter/part '" .. triedChapterName .. "'"
+    chapterClause = ", chapter/part '" .. triedChapterName .. "'"
   end
 
   local safeTitle = clean_up_string(title, MAX_TITLE)
   local safeAuthor = clean_up_string(author, MAX_TITLE)
-  local safeChapter = clean_up_string(chapter, MAX_TITLE)
+  local safeChapter = clean_up_string(chapterClause, MAX_TITLE)
   local safeHighlightedText = clean_up_string(highlightedText, MAX_HL)
 
   local selectionInContext = get_selection_in_context(self.ui.document, highlightedText, 10)
@@ -130,7 +130,20 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
     return
   end
 
-  lastQuery = string.format(query, safeTitle, safeAuthor, safeChapter, safeHighlightedText, safeSelectionInContext)
+  local replacements = {
+    ["{title}"] = safeTitle,
+    ["{author}"] = safeAuthor,
+    ["{chapter}"] = safeChapter,
+    ["{selection}"] = safeHighlightedText,
+    ["{context}"] = safeSelectionInContext,
+  }
+
+  local resolvedQuery = query
+  for key, value in pairs(replacements) do
+    resolvedQuery = resolvedQuery:gsub(key, value)
+  end
+
+  lastQuery = resolvedQuery
   lastPrefaceWithSelection = preface_with_selection
 
   UIManager:scheduleIn(0.01, function()
@@ -175,8 +188,8 @@ function AskGPT:init()
       enabled = Device:hasClipboard(),
       callback = function()
           self:Query(_reader_highlight_instance, "AI Explain", false,
-            "I'm reading '%s' by '%s'%s. This is my highlighted text: \n'%s'\n" ..
-            "This is the context where it appears: '...%s...'\n" ..
+            "I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
+            "This is the context where it appears: '...{context}...'\n" ..
             "Explain it in the context/lore of the book, and help me understand it better (like Amazon Kindle's X-Ray, but much more concise)." ..
             "No spoilers if it's fiction. Plain text. Keep your explanation concise and brief (under 80 words), and ask no questions at the end.")
       end,
@@ -189,8 +202,8 @@ function AskGPT:init()
       enabled = Device:hasClipboard(),
       callback = function()
           self:Query(_reader_highlight_instance, "AI English Explain", false,
-            "I'm an advanced learner of English. I'm reading '%s' by '%s'%s. This is my highlighted text: \n'%s'\n" ..
-            "This is the context where it appears: '...%s...'\n" ..
+            "I'm an advanced learner of English. I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
+            "This is the context where it appears: '...{context}...'\n" ..
             "Explain its meaning in simple understandable English. Keep your explanation brief and under 30 words.")
       end,
     }
@@ -202,8 +215,8 @@ function AskGPT:init()
       enabled = Device:hasClipboard(),
       callback = function()
           self:Query(_reader_highlight_instance, "AI Dictionary", true,
-            "I'm an advanced learner of English. I'm reading '%s' by '%s'%s. My selected text: \n'%s'\n"..
-            "This is the context where it appears: '...%s...'\n" ..
+            "I'm an advanced learner of English. I'm reading '{title}' by '{author}'{chapter}. My selected text: \n'{selection}'\n"..
+            "This is the context where it appears: '...{context}...'\n" ..
             "ONLY for the selected text, give me an informative, context-aware, dictionary-style answer strictly in this format ONCE and add nothing more:\n" ..
             "(v./n./idiom/etc.) " ..
             "/[ACCURATE and CORRECT American (US) English pronunciation in the form of IPA]/ " ..
