@@ -23,7 +23,7 @@ local http = require("socket.http") -- needed to cap the pre-SSL socket connect 
 local ltn12 = require("ltn12")
 local json = require("json")
 
-local REQUEST_TIMEOUT_SECONDS = 3
+local REQUEST_TIMEOUT_SECONDS = 5
 
 https.TIMEOUT = REQUEST_TIMEOUT_SECONDS -- fail fast once TLS session exists
 http.TIMEOUT = REQUEST_TIMEOUT_SECONDS -- also cap DNS lookup + TCP connect latency

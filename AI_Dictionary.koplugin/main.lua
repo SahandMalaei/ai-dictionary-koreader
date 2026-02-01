@@ -23,10 +23,34 @@ local save_lookup_entry = require("lookups_log")
 local MAX_HL = 2000
 local MAX_TITLE = 100
 
+local PTF_HEADER = "\u{FFF1}"
+local PTF_BOLD_START = "\u{FFF2}"
+local PTF_BOLD_END = "\u{FFF3}"
+
 local AskGPT = InputContainer:new {
   name = "askgpt",
   is_doc_only = true,
 }
+
+local function ptf_bold(s)
+    return PTF_BOLD_START .. s .. PTF_BOLD_END
+end
+
+local function format_dictionary_output(selection, answer)
+    local output = answer or ""
+    if selection and selection ~= "" then
+        output = ptf_bold(selection) .. " " .. output
+    end
+    for _, label in ipairs({ "Definition", "Example", "Synonyms", "Etymology" }) do
+        output = output:gsub("(^%s*)" .. label .. "%s*:", function(prefix)
+            return prefix .. ptf_bold(label .. ":")
+        end)
+        output = output:gsub("([\r\n]%s*)" .. label .. "%s*:", function(prefix)
+            return prefix .. ptf_bold(label .. ":")
+        end)
+    end
+    return PTF_HEADER .. output
+end
 
 local function capitalize_first(s)
     return (s:gsub("^%l", string.upper))
@@ -71,6 +95,7 @@ local lastQuery = ""
 local lastPrefaceWithSelection = false
 local lastTitleCaseSelection = ""
 local waitMessage = ""
+local lastIsDictionary = false
 
 function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_selection, query)
   local ui = self.ui
@@ -145,6 +170,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
 
   lastQuery = resolvedQuery
   lastPrefaceWithSelection = preface_with_selection
+  lastIsDictionary = dialog_title == "AI Dictionary"
 
   UIManager:scheduleIn(0.01, function()
     local message_history = {
@@ -154,7 +180,9 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
     }}
 
     local answer = queryChatGPT(message_history)
-    if preface_with_selection then
+    if lastIsDictionary then
+      chatgpt_viewer:update(format_dictionary_output(titleCaseSelection, answer))
+    elseif preface_with_selection then
       chatgpt_viewer:update(string.format("%s %s", titleCaseSelection, answer))
     else
       chatgpt_viewer:update(string.format("%s %s", "", answer))
@@ -173,7 +201,9 @@ function AskGPT:Regenerate(chatgpt_viewer)
     }}
 
     local answer = queryChatGPT(message_history)
-    if lastPrefaceWithSelection then
+    if lastIsDictionary then
+      updatedViewer:update(format_dictionary_output(lastTitleCaseSelection, answer))
+    elseif lastPrefaceWithSelection then
       updatedViewer:update(string.format("%s %s", lastTitleCaseSelection, answer))
     else
       updatedViewer:update(string.format("%s %s", "", answer))
