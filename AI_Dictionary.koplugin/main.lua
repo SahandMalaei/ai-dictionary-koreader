@@ -41,8 +41,9 @@ end
 
 local function format_dictionary_output(selection, answer)
     local output = answer or ""
+    local header = nil
     if selection and selection ~= "" then
-        output = ptf_bold(selection) .. " " .. output
+        header = PTF_HEADER .. ptf_bold(selection)
     end
     for _, label in ipairs({ "Definition", "Example", "Synonyms", "Etymology" }) do
         output = output:gsub("(^%s*)" .. label .. "%s*:", function(prefix)
@@ -52,7 +53,7 @@ local function format_dictionary_output(selection, answer)
             return prefix .. ptf_bold(label .. ":")
         end)
     end
-    return PTF_HEADER .. output
+    return header, PTF_HEADER .. output
 end
 
 local function capitalize_first(s)
@@ -184,7 +185,8 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
 
     local answer = queryChatGPT(message_history)
     if lastIsDictionary then
-      chatgpt_viewer:update(format_dictionary_output(titleCaseSelection, answer))
+      local header_text, body_text = format_dictionary_output(titleCaseSelection, answer)
+      chatgpt_viewer:update(body_text, header_text)
     elseif preface_with_selection then
       chatgpt_viewer:update(string.format("%s %s", titleCaseSelection, answer))
     else
@@ -217,7 +219,8 @@ function AskGPT:Regenerate(chatgpt_viewer)
 
     local answer = queryChatGPT(message_history)
     if lastIsDictionary then
-      updatedViewer:update(format_dictionary_output(lastTitleCaseSelection, answer))
+      local header_text, body_text = format_dictionary_output(lastTitleCaseSelection, answer)
+      updatedViewer:update(body_text, header_text)
     elseif lastPrefaceWithSelection then
       updatedViewer:update(string.format("%s %s", lastTitleCaseSelection, answer))
     else

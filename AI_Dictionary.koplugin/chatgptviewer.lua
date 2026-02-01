@@ -23,10 +23,12 @@ local InputDialog = require("ui/widget/inputdialog")
 local MovableContainer = require("ui/widget/container/movablecontainer")
 local Notification = require("ui/widget/notification")
 local ScrollTextWidget = require("ui/widget/scrolltextwidget")
+local TextBoxWidget = require("ui/widget/textboxwidget")
 local Size = require("ui/size")
 local TitleBar = require("ui/widget/titlebar")
 local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
+local VerticalSpan = require("ui/widget/verticalspan")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local T = require("ffi/util").template
 local util = require("util")
@@ -56,6 +58,9 @@ local ChatGPTViewer = InputContainer:extend {
   title_multilines = nil,         -- see TitleBar for details
   title_shrink_font_to_fit = nil, -- see TitleBar for details
   text_face = Font:getFace("x_smallinfofont"),
+  header_text = nil,
+  header_face = nil,
+  header_spacing = Size.padding.small,
   fgcolor = Blitbuffer.COLOR_BLACK,
   text_padding = Size.padding.large,
   text_margin = Size.margin.small,
@@ -218,13 +223,44 @@ function ChatGPTViewer:init()
   }
 
   local textw_height = self.height - titlebar:getHeight() - self.button_table:getSize().h
+  local inner_width = self.width - 2 * self.text_padding - 2 * self.text_margin
+  local inner_height = textw_height - 2 * self.text_padding - 2 * self.text_margin
+  local header_widget = nil
+  local header_height = 0
+  if self.header_text and self.header_text ~= "" then
+    local base_font = self.text_face and self.text_face.orig_font or "x_smallinfofont"
+    local base_size = self.text_face and self.text_face.orig_size or Font.sizemap.x_smallinfofont
+    local header_face = self.header_face or Font:getFace(base_font, math.floor(base_size * 1.3 + 0.5))
+    header_widget = TextBoxWidget:new {
+      text = self.header_text,
+      face = header_face,
+      fgcolor = self.fgcolor,
+      width = inner_width,
+      dialog = self,
+      alignment = self.alignment,
+      justified = false,
+      lang = self.lang,
+      para_direction_rtl = self.para_direction_rtl,
+      auto_para_direction = self.auto_para_direction,
+      alignment_strict = self.alignment_strict,
+    }
+    header_height = header_widget:getSize().h
+  end
+
+  local body_height = inner_height
+  if header_widget then
+    body_height = inner_height - header_height - self.header_spacing
+    if body_height < 1 then
+      body_height = 1
+    end
+  end
 
   self.scroll_text_w = ScrollTextWidget:new {
     text = self.text,
     face = self.text_face,
     fgcolor = self.fgcolor,
-    width = self.width - 2 * self.text_padding - 2 * self.text_margin,
-    height = textw_height - 2 * self.text_padding - 2 * self.text_margin,
+    width = inner_width,
+    height = body_height,
     dialog = self,
     alignment = self.alignment,
     justified = self.justified,
@@ -234,11 +270,23 @@ function ChatGPTViewer:init()
     alignment_strict = self.alignment_strict,
     scroll_callback = self._buttons_scroll_callback,
   }
+
+  local text_group = nil
+  if header_widget then
+    text_group = VerticalGroup:new {
+      header_widget,
+      VerticalSpan:new { height = self.header_spacing },
+      self.scroll_text_w,
+    }
+  else
+    text_group = self.scroll_text_w
+  end
+
   self.textw = FrameContainer:new {
     padding = self.text_padding,
     margin = self.text_margin,
     bordersize = 0,
-    self.scroll_text_w
+    text_group,
   }
 
   self.frame = FrameContainer:new {
@@ -444,16 +492,19 @@ function ChatGPTViewer:handleTextSelection(text, hold_duration, start_idx, end_i
   end
 end
 
-function ChatGPTViewer:update(new_text)
+function ChatGPTViewer:update(new_text, new_header_text)
   UIManager:close(self)
   local updated_viewer = ChatGPTViewer:new {
     title = self.title,
     text = new_text,
+    header_text = new_header_text or self.header_text,
     width = self.width,
     height = self.height,
     buttons_table = self.buttons_table,
     onAskQuestion = self.onAskQuestion,
-    benedict = self.benedict
+    benedict = self.benedict,
+    header_face = self.header_face,
+    header_spacing = self.header_spacing,
   }
   updated_viewer.scroll_text_w:scrollToBottom()
   UIManager:show(updated_viewer)
