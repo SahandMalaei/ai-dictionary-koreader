@@ -27,6 +27,9 @@ local PTF_HEADER = "\u{FFF1}"
 local PTF_BOLD_START = "\u{FFF2}"
 local PTF_BOLD_END = "\u{FFF3}"
 
+local OFFLINE_WAIT_MESSAGE = "You are offline. AI lookup requires an active internet connection."
+local ONLINE_WAIT_MESSAGE = "Getting the answer..."
+
 local AskGPT = InputContainer:new {
   name = "askgpt",
   is_doc_only = true,
@@ -130,9 +133,9 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   local online = NetworkMgr:isOnline()
 
   if not online then
-    waitMessage = "You are offline. AI lookup requires an active internet connection."
+    waitMessage = OFFLINE_WAIT_MESSAGE
   else
-    waitMessage = "Getting the answer..."
+    waitMessage = ONLINE_WAIT_MESSAGE
   end
 
   local chatgpt_viewer = ChatGPTViewer:new {
@@ -151,10 +154,6 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
     save_lookup_entry(file_path, safeTitle, dialog_title, safeSelectionInContext)
   end
 
-  if not online then
-    return
-  end
-
   local replacements = {
     ["{title}"] = safeTitle,
     ["{author}"] = safeAuthor,
@@ -171,6 +170,10 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   lastQuery = resolvedQuery
   lastPrefaceWithSelection = preface_with_selection
   lastIsDictionary = dialog_title == "AI Dictionary"
+
+  if not online then
+    return
+  end
 
   UIManager:scheduleIn(0.01, function()
     local message_history = {
@@ -191,7 +194,19 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
 end
 
 function AskGPT:Regenerate(chatgpt_viewer)
+  local online = NetworkMgr:isOnline()
+
+  if not online then
+    waitMessage = OFFLINE_WAIT_MESSAGE
+  else
+    waitMessage = ONLINE_WAIT_MESSAGE
+  end
+
   local updatedViewer = chatgpt_viewer:update(waitMessage)
+
+  if not online then
+    return
+  end
 
   UIManager:scheduleIn(0.01, function()
     local message_history = {
