@@ -45,7 +45,7 @@ local function format_dictionary_output(selection, answer)
     if selection and selection ~= "" then
         header = PTF_HEADER .. ptf_bold(selection)
     end
-    for _, label in ipairs({ "Definition", "Example", "Synonyms", "Etymology" }) do
+    for _, label in ipairs({ "Definition", "Example", "Synonyms", "Etymology", "Paraphrase" }) do
         output = output:gsub("(^%s*)" .. label .. "%s*:", function(prefix)
             return prefix .. ptf_bold(label .. ":")
         end)
@@ -268,11 +268,13 @@ function AskGPT:init()
             "ONLY for the selected text, give me an informative, context-aware, dictionary-style answer strictly in this format ONCE and add nothing more:\n" ..
             "(v./n./idiom/etc.) " ..
             "/[ACCURATE and CORRECT American (US) English pronunciation in the form of IPA]/ " ..
-            "([English alphabet pronunciation help American US English])\n\n" ..
-            "Definition: [Definition in under 20 words]\n\n" ..
+            "([English alphabet pronunciation help American US English])\n" ..
+            "[Up to 3 feel and register tags separated by '•', e.g. slang, conversational, blunt, historical, formal, neutral, offensive (all lower-case)]\n\n" ..
+            "Definition: [Plain and understandable definition in under 20 words]\n\n" ..
             "Example: [A natural sentence that uses the word(s) in the same meaning and register, but in a different situation]\n\n" ..
             "Synonyms: [Up to 3 synonyms, if any exists. If there are no synonyms skip this section]\n\n" ..
-            "Etymology: [Helpful etymology with a focus on the different parts that make up the word, in under 30 words]")
+            "Paraphrase: [A short example sentence paraphrasing the selection using simpler words, with the same meaning and register]\n\n" ..
+            "Etymology: [Concise and helpful etymology with a focus on the different parts that make up the word or interesting history in case of idioms, in under 20 words]")
       end,
     }
   end)
