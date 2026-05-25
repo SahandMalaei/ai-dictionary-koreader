@@ -1,7 +1,7 @@
 # AI Dictionary: Supercharged Dictionary/Explainer for KOReader
 
-AI Dictionary is a dictionary/explanation plugin for KOReader that can have a transformative effect on your reading and learning. I built it out of personal frustration with the dictionary solutions that are currently available, and the resulting plugin is something I use everyday with my reading. As I'm sure you are aware, the limitation of traditional dictionaries include:
-1. They give you multiple definitions of the same word and you need to figure out which definition fits the context.
+AI Dictionary is a dictionary/explanation plugin for KOReader that can have a transformative effect on your reading and learning. I built it out of personal frustration with the dictionary solutions that are currently available, and the resulting plugin is something I use every day with my reading. As I'm sure you are aware, the limitations of traditional dictionaries include:
+1. They give you multiple definitions of the same word and you need to figure out/guess which definition fits the context.
 2. The built-in dictionaries of ebook readers generally don't allow looking up the definition of multi-part words and idioms.
 3. They can't give you the definition in the context of the book that you are reading, and might—understandably—lack the definiton for words which only make sense in the context of a book, e.g. fictional terms in a novel.
 
