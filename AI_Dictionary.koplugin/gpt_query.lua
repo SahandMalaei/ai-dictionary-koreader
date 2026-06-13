@@ -28,6 +28,10 @@ local REQUEST_TIMEOUT_SECONDS = 5
 https.TIMEOUT = REQUEST_TIMEOUT_SECONDS -- fail fast once TLS session exists
 http.TIMEOUT = REQUEST_TIMEOUT_SECONDS -- also cap DNS lookup + TCP connect latency
 
+local function isOpenRouterUrl(url)
+  return type(url) == "string" and url:lower():find("openrouter.ai", 1, true) ~= nil
+end
+
 local function queryChatGPT(message_history)
   local api_key_value = CONFIGURATION and CONFIGURATION.api_key or api_key
   local api_url = CONFIGURATION and CONFIGURATION.provider or "https://api.openai.com/v1/chat/completions"
@@ -39,6 +43,12 @@ local function queryChatGPT(message_history)
     --verbosity = "low",
     messages = message_history
   }
+
+  if isOpenRouterUrl(api_url) then
+    requestBodyTable.provider = {
+      sort = "latency"
+    }
+  end
 
   if CONFIGURATION and CONFIGURATION.additional_parameters then
     for key, value in pairs(CONFIGURATION.additional_parameters) do
