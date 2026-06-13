@@ -27,6 +27,8 @@ local PTF_HEADER = "\u{FFF1}"
 local PTF_BOLD_START = "\u{FFF2}"
 local PTF_BOLD_END = "\u{FFF3}"
 
+local DICTIONARY_SECTION_LABELS = { "Definition", "Example", "Synonyms", "Paraphrase", "Etymology" }
+
 local OFFLINE_WAIT_MESSAGE = "You are offline. AI lookup requires an active internet connection."
 local ONLINE_WAIT_MESSAGE = "Getting the answer..."
 
@@ -45,7 +47,7 @@ local function format_dictionary_output(selection, answer)
     if selection and selection ~= "" then
         header = PTF_HEADER .. ptf_bold(selection)
     end
-    for _, label in ipairs({ "Definition", "Example", "Synonyms", "Etymology", "Paraphrase" }) do
+    for _, label in ipairs(DICTIONARY_SECTION_LABELS) do
         output = output:gsub("(^%s*)" .. label .. "%s*:", function(prefix)
             return prefix .. ptf_bold(label .. ":")
         end)
@@ -69,6 +71,32 @@ local function repaint_now()
   end
 end
 
+local function find_dictionary_section_boundary(text, after_index)
+  local latest_start = nil
+
+  for _, label in ipairs(DICTIONARY_SECTION_LABELS) do
+    local search_from = math.max((after_index or 0) + 1, 1)
+    while true do
+      local start_index, end_index = text:find(label .. "%s*:", search_from)
+      if not start_index then
+        break
+      end
+
+      local line_start = text:sub(1, start_index - 1):match(".*[\r\n]()") or 1
+      local before_label = text:sub(line_start, start_index - 1)
+      if before_label:match("^%s*$") then
+        if not latest_start or start_index > latest_start then
+          latest_start = start_index
+        end
+      end
+
+      search_from = end_index + 1
+    end
+  end
+
+  return latest_start
+end
+
 local function render_answer(chatgpt_viewer, is_dictionary, title_case_selection, preface_with_selection, answer)
     if is_dictionary then
       local header_text, body_text = format_dictionary_output(title_case_selection, answer)
@@ -83,6 +111,7 @@ end
 local function stream_answer(chatgpt_viewer, message_history, is_dictionary, title_case_selection, preface_with_selection)
   local current_viewer = chatgpt_viewer
   local last_rendered_token_count = 0
+  local last_rendered_dictionary_boundary = 0
   local last_rendered_answer = nil
   local cancel_stream
 
@@ -101,7 +130,13 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
 
   cancel_stream = queryStream(message_history, {
     on_delta = function(_, accumulated, token_count)
-      if token_count - last_rendered_token_count >= STREAM_UPDATE_TOKEN_INTERVAL then
+      if is_dictionary then
+        local boundary = find_dictionary_section_boundary(accumulated, last_rendered_dictionary_boundary)
+        if boundary then
+          last_rendered_dictionary_boundary = boundary
+          update_viewer(accumulated:sub(1, boundary - 1):gsub("%s+$", ""))
+        end
+      elseif token_count - last_rendered_token_count >= STREAM_UPDATE_TOKEN_INTERVAL then
         last_rendered_token_count = token_count
         update_viewer(accumulated)
       end
