@@ -9,7 +9,6 @@ local UIManager = require("ui/uimanager")
 local ChatGPTViewer = require("chatgptviewer")
 local handleNewQuestion = require("dialogs")
 
-local queryChatGPT = require("gpt_query")
 local queryStream = require("gpt_query_stream")
 
 local clean_up_string = require("string_cleanup")
@@ -22,6 +21,7 @@ local save_lookup_entry = require("lookups_log")
 
 local MAX_HL = 2000
 local MAX_TITLE = 100
+local STREAM_UPDATE_TOKEN_INTERVAL = 10
 
 local PTF_HEADER = "\u{FFF1}"
 local PTF_BOLD_START = "\u{FFF2}"
@@ -58,6 +58,65 @@ end
 
 local function capitalize_first(s)
     return (s:gsub("^%l", string.upper))
+end
+
+local function repaint_now()
+  if UIManager.forceRePaint then
+    pcall(function() UIManager:forceRePaint() end)
+  end
+  if UIManager.yieldToEPDC then
+    pcall(function() UIManager:yieldToEPDC() end)
+  end
+end
+
+local function render_answer(chatgpt_viewer, is_dictionary, title_case_selection, preface_with_selection, answer)
+    if is_dictionary then
+      local header_text, body_text = format_dictionary_output(title_case_selection, answer)
+      return chatgpt_viewer:update(body_text, header_text)
+    elseif preface_with_selection then
+      return chatgpt_viewer:update(string.format("%s %s", title_case_selection, answer))
+    else
+      return chatgpt_viewer:update(string.format("%s %s", "", answer))
+    end
+end
+
+local function stream_answer(chatgpt_viewer, message_history, is_dictionary, title_case_selection, preface_with_selection)
+  local current_viewer = chatgpt_viewer
+  local last_rendered_token_count = 0
+  local last_rendered_answer = nil
+  local cancel_stream
+
+  local function update_viewer(answer)
+    last_rendered_answer = answer
+    current_viewer = render_answer(
+      current_viewer,
+      is_dictionary,
+      title_case_selection,
+      preface_with_selection,
+      answer
+    )
+    current_viewer.stream_cancel = cancel_stream
+    repaint_now()
+  end
+
+  cancel_stream = queryStream(message_history, {
+    on_delta = function(_, accumulated, token_count)
+      if token_count - last_rendered_token_count >= STREAM_UPDATE_TOKEN_INTERVAL then
+        last_rendered_token_count = token_count
+        update_viewer(accumulated)
+      end
+    end,
+    on_done = function(accumulated)
+      if accumulated ~= last_rendered_answer then
+        update_viewer(accumulated)
+      end
+    end,
+    on_error = function(err)
+      update_viewer("Error querying AI: " .. tostring(err))
+    end,
+  })
+
+  current_viewer.stream_cancel = cancel_stream
 end
 
 function AskGPT:getCurrentChapterName()
@@ -183,15 +242,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
       content = lastQuery
     }}
 
-    local answer = queryChatGPT(message_history)
-    if lastIsDictionary then
-      local header_text, body_text = format_dictionary_output(titleCaseSelection, answer)
-      chatgpt_viewer:update(body_text, header_text)
-    elseif preface_with_selection then
-      chatgpt_viewer:update(string.format("%s %s", titleCaseSelection, answer))
-    else
-      chatgpt_viewer:update(string.format("%s %s", "", answer))
-    end
+    stream_answer(chatgpt_viewer, message_history, lastIsDictionary, titleCaseSelection, preface_with_selection)
   end)
 end
 
@@ -217,15 +268,7 @@ function AskGPT:Regenerate(chatgpt_viewer)
       content = lastQuery
     }}
 
-    local answer = queryChatGPT(message_history)
-    if lastIsDictionary then
-      local header_text, body_text = format_dictionary_output(lastTitleCaseSelection, answer)
-      updatedViewer:update(body_text, header_text)
-    elseif lastPrefaceWithSelection then
-      updatedViewer:update(string.format("%s %s", lastTitleCaseSelection, answer))
-    else
-      updatedViewer:update(string.format("%s %s", "", answer))
-    end
+    stream_answer(updatedViewer, message_history, lastIsDictionary, lastTitleCaseSelection, lastPrefaceWithSelection)
   end)
 end
 

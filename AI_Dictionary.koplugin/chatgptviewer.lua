@@ -72,7 +72,8 @@ local ChatGPTViewer = InputContainer:extend {
 
   onAskQuestion = nil,
 
-  benedict = nil
+  benedict = nil,
+  stream_cancel = nil,
 }
 
 function ChatGPTViewer:init()
@@ -395,6 +396,10 @@ function ChatGPTViewer:onMultiSwipe(arg, ges_ev)
 end
 
 function ChatGPTViewer:onClose()
+  if self.stream_cancel then
+    self.stream_cancel()
+    self.stream_cancel = nil
+  end
   UIManager:close(self)
   if self.close_callback then
     self.close_callback()
@@ -503,6 +508,8 @@ function ChatGPTViewer:update(new_text, new_header_text)
     buttons_table = self.buttons_table,
     onAskQuestion = self.onAskQuestion,
     benedict = self.benedict,
+    close_callback = self.close_callback,
+    stream_cancel = self.stream_cancel,
     header_face = self.header_face,
     header_spacing = self.header_spacing,
   }
