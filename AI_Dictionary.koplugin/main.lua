@@ -12,6 +12,7 @@ local ChatGPTViewer = require("chatgptviewer")
 local handleNewQuestion = require("dialogs")
 
 local queryStream = require("gpt_query_stream")
+local Updater = require("updater")
 
 local clean_up_string = require("string_cleanup")
 
@@ -740,6 +741,8 @@ function AskGPT:init()
   if self.ui and self.ui.menu then
     self.ui.menu:registerToMainMenu(self)
   end
+  self.updater = Updater:new(self)
+  self.updater:checkOnStartup()
 
   self.ui.highlight:addToHighlightDialog("aidictionary_1", function(_reader_highlight_instance)
     return {
