@@ -42,7 +42,7 @@ local function read_file(path)
 end
 
 local function first_logged_lookup(contents)
-  return contents:match("^%s*%Time:[^\r\n]*[\r\n]+%Lookup:%s*([^\r\n]*)")
+  return contents:match("^%s*%-?%s*Time:[^\r\n]*[\r\n]+%-?%s*Lookup:%s*([^\r\n]*)")
 end
 
 local function escape_lua_pattern(value)

@@ -5,13 +5,16 @@ local _ = require("gettext")
 
 local showLoadingDialog = require("dialogs")
 
+local ButtonDialog = require("ui/widget/buttondialog")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local UIManager = require("ui/uimanager")
 local ChatGPTViewer = require("chatgptviewer")
 local handleNewQuestion = require("dialogs")
 
+local queryChatGPT = require("gpt_query")
 local queryStream = require("gpt_query_stream")
+local LookupsReport = require("lookups_report")
 local Updater = require("updater")
 
 local clean_up_string = require("string_cleanup")
@@ -386,6 +389,7 @@ local lastQuery = ""
 local lastPrefaceWithSelection = false
 local lastTitleCaseSelection = ""
 local lastRequestParameters = nil
+local lastIsReport = false
 local waitMessage = ""
 local lastIsDictionary = false
 
@@ -453,6 +457,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   lastQuery = resolvedQuery
   lastPrefaceWithSelection = preface_with_selection
   lastRequestParameters = request_parameters
+  lastIsReport = false
   lastIsDictionary = dialog_title == "AI Dictionary"
 
   if not online then
@@ -496,7 +501,105 @@ function AskGPT:Regenerate(chatgpt_viewer)
       content = lastQuery
     }}
 
-    stream_answer(updatedViewer, message_history, lastIsDictionary, lastTitleCaseSelection, lastPrefaceWithSelection, nil, lastRequestParameters)
+    if lastIsReport then
+      local report = queryChatGPT(message_history)
+      updatedViewer:update(report, nil, { scroll_to_bottom = false })
+    else
+      stream_answer(updatedViewer, message_history, lastIsDictionary, lastTitleCaseSelection, lastPrefaceWithSelection, nil, lastRequestParameters)
+    end
+  end)
+end
+
+function AskGPT:showLookupsReportRequestDialog(selected_index)
+  selected_index = selected_index or 1
+  local timeframe = LookupsReport.TIMEFRAMES[selected_index] or LookupsReport.TIMEFRAMES[1]
+  local report_dialog
+
+  report_dialog = ButtonDialog:new {
+    title = "AI Dictionary Lookups Report",
+    buttons = {
+      {
+        {
+          text = "Timeframe: " .. timeframe.label,
+          callback = function()
+            UIManager:close(report_dialog)
+            self:showLookupsReportTimeframeDialog(selected_index)
+          end,
+        },
+      },
+      {
+        {
+          text = "Generate Report",
+          callback = function()
+            UIManager:close(report_dialog)
+            self:generateLookupsReport(timeframe)
+          end,
+        },
+      },
+    },
+  }
+
+  UIManager:show(report_dialog)
+end
+
+function AskGPT:showLookupsReportTimeframeDialog(selected_index)
+  local selector_dialog
+  local buttons = {}
+
+  for index, timeframe in ipairs(LookupsReport.TIMEFRAMES) do
+    table.insert(buttons, {
+      {
+        text = (index == selected_index and "* " or "") .. timeframe.label,
+        callback = function()
+          UIManager:close(selector_dialog)
+          self:showLookupsReportRequestDialog(index)
+        end,
+      },
+    })
+  end
+
+  selector_dialog = ButtonDialog:new {
+    title = "Timeframe",
+    buttons = buttons,
+  }
+
+  UIManager:show(selector_dialog)
+end
+
+function AskGPT:generateLookupsReport(timeframe)
+  local entries = LookupsReport.load_entries(self.path, timeframe)
+  if #entries == 0 then
+    show_message("No lookups found for " .. timeframe.label .. ".")
+    return
+  end
+
+  local report_viewer = ChatGPTViewer:new {
+    title = "AI Dictionary Lookups Report",
+    text = "Generating report...",
+    onAskQuestion = nil,
+    benedict = self
+  }
+
+  UIManager:show(report_viewer)
+
+  UIManager:scheduleIn(0.01, function()
+    local report_prompt = LookupsReport.build_prompt(entries, timeframe)
+    lastQuery = report_prompt
+    lastPrefaceWithSelection = false
+    lastTitleCaseSelection = ""
+    lastRequestParameters = nil
+    lastIsDictionary = false
+    lastIsReport = true
+
+    local message_history = {
+      {
+        role = "user",
+        content = report_prompt,
+      },
+    }
+
+    local report = queryChatGPT(message_history)
+    report_viewer:update(report, nil, { scroll_to_bottom = false })
   end)
 end
 
@@ -738,6 +841,13 @@ function AskGPT:getSettingsMenuItems()
 end
 
 function AskGPT:addToMainMenu(menu_items)
+  menu_items.ai_dictionary_lookups_report = {
+    text = "AI Dictionary Lookups Report",
+    sorting_hint = "search",
+    callback = function()
+      self:showLookupsReportRequestDialog()
+    end,
+  }
   menu_items.ai_dictionary_settings = {
     text = "AI Dictionary settings",
     sorting_hint = "more_tools",

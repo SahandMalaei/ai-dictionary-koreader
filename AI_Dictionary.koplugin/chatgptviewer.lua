@@ -497,7 +497,8 @@ function ChatGPTViewer:handleTextSelection(text, hold_duration, start_idx, end_i
   end
 end
 
-function ChatGPTViewer:update(new_text, new_header_text)
+function ChatGPTViewer:update(new_text, new_header_text, options)
+  options = options or {}
   UIManager:close(self)
   local updated_viewer = ChatGPTViewer:new {
     title = self.title,
@@ -513,7 +514,9 @@ function ChatGPTViewer:update(new_text, new_header_text)
     header_face = self.header_face,
     header_spacing = self.header_spacing,
   }
-  updated_viewer.scroll_text_w:scrollToBottom()
+  if options.scroll_to_bottom ~= false then
+    updated_viewer.scroll_text_w:scrollToBottom()
+  end
   UIManager:show(updated_viewer)
   return updated_viewer
 end
