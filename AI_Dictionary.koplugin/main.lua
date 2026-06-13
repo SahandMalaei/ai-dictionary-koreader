@@ -48,6 +48,19 @@ local CONFIGURATION_LABELS = {
   additional_parameters = "Additional parameters",
 }
 
+local AI_EXPLAIN_WEB_SEARCH_PARAMETERS = {
+  plugins = {
+    {
+      id = "web",
+      max_results = 3,
+      search_prompt = "Use the web results only if it helps explain the selected text in the book context. Keep the answer concise.",
+    },
+  },
+  web_search_options = {
+    search_context_size = "low",
+  },
+}
+
 local AskGPT = InputContainer:new {
   name = "askgpt",
   is_doc_only = true,
@@ -284,7 +297,7 @@ local function render_answer(chatgpt_viewer, is_dictionary, title_case_selection
     end
 end
 
-local function stream_answer(chatgpt_viewer, message_history, is_dictionary, title_case_selection, preface_with_selection, on_success)
+local function stream_answer(chatgpt_viewer, message_history, is_dictionary, title_case_selection, preface_with_selection, on_success, request_parameters)
   local current_viewer = chatgpt_viewer
   local last_rendered_token_count = 0
   local last_rendered_dictionary_boundary = 0
@@ -305,6 +318,7 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
   end
 
   cancel_stream = queryStream(message_history, {
+    request_parameters = request_parameters,
     on_delta = function(_, accumulated, token_count)
       if is_dictionary then
         local boundary = find_dictionary_section_boundary(accumulated, last_rendered_dictionary_boundary)
@@ -371,10 +385,11 @@ end
 local lastQuery = ""
 local lastPrefaceWithSelection = false
 local lastTitleCaseSelection = ""
+local lastRequestParameters = nil
 local waitMessage = ""
 local lastIsDictionary = false
 
-function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_selection, query)
+function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_selection, query, request_parameters)
   local ui = self.ui
   local title, author =
     ui.document:getProps().title or "Unknown Title",
@@ -437,6 +452,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
 
   lastQuery = resolvedQuery
   lastPrefaceWithSelection = preface_with_selection
+  lastRequestParameters = request_parameters
   lastIsDictionary = dialog_title == "AI Dictionary"
 
   if not online then
@@ -454,7 +470,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
       if lastIsDictionary and answer and answer ~= "" then
         save_lookup_entry(self.path, safeHighlightedText, safeSelectionInContext)
       end
-    end)
+    end, request_parameters)
   end)
 end
 
@@ -480,7 +496,7 @@ function AskGPT:Regenerate(chatgpt_viewer)
       content = lastQuery
     }}
 
-    stream_answer(updatedViewer, message_history, lastIsDictionary, lastTitleCaseSelection, lastPrefaceWithSelection)
+    stream_answer(updatedViewer, message_history, lastIsDictionary, lastTitleCaseSelection, lastPrefaceWithSelection, nil, lastRequestParameters)
   end)
 end
 
@@ -753,8 +769,10 @@ function AskGPT:init()
           self:Query(_reader_highlight_instance, "AI Explain", false,
             "I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
             "This is the context where it appears: '...{context}...'\n" ..
-            "Explain it in the context/lore of the book, and help me understand it better (like Amazon Kindle's X-Ray, but much more concise)." ..
-            "No spoilers if it's fiction. Plain text. Keep your explanation concise and brief (under 80 words), and ask no questions at the end.")
+            "Use web search economically to identify or verify the book, character, place, term, reference, or allusion if that helps. " ..
+            "Explain it in the context/lore of the book, and help me understand it better (like Amazon Kindle's X-Ray, but much more concise). " ..
+            "No spoilers if it's fiction. Plain text. Keep your explanation concise and brief (under 90 words), and ask no questions at the end.",
+            AI_EXPLAIN_WEB_SEARCH_PARAMETERS)
       end,
     }
   end)

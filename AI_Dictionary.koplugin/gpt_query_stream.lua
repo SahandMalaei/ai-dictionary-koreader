@@ -71,7 +71,7 @@ local function parseSseBuffer(buffer, on_payload)
   return buffer
 end
 
-local function buildRequestBody(message_history, configuration)
+local function buildRequestBody(message_history, configuration, request_parameters)
   local api_url = configuration and configuration.provider or "https://api.openai.com/v1/chat/completions"
   local llm = configuration and configuration.model or "gpt-5-nano"
 
@@ -92,6 +92,12 @@ local function buildRequestBody(message_history, configuration)
     end
   end
 
+  if isOpenRouterUrl(api_url) and request_parameters then
+    for key, value in pairs(request_parameters) do
+      requestBodyTable[key] = value
+    end
+  end
+
   requestBodyTable.stream = true
 
   return api_url, json.encode(requestBodyTable)
@@ -107,7 +113,7 @@ local function queryChatGPTStream(message_history, opts)
     return function() end
   end
 
-  local api_url, requestBody = buildRequestBody(message_history, configuration)
+  local api_url, requestBody = buildRequestBody(message_history, configuration, opts.request_parameters)
   local accumulated = ""
   local token_count = 0
   local response_buffer = ""
