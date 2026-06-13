@@ -192,6 +192,10 @@ local function is_preserved_config(relative)
       or relative:match("/configuration%.lua$") ~= nil
 end
 
+local function is_preserved_user_data(relative)
+  return relative == "Lookups" or relative:match("^Lookups/") ~= nil
+end
+
 local function is_updater_temp(relative)
   return relative:match("^%.update%-") ~= nil
 end
@@ -243,8 +247,9 @@ local function prune_empty_dirs(root)
   scan(root)
   table.sort(dirs, function(a, b) return #a > #b end)
   for _, dir in ipairs(dirs) do
+    local relative = relative_path(root, dir)
     pcall(function()
-      if util.isEmptyDir(dir) then
+      if not is_preserved_user_data(relative) and not is_updater_temp(relative) and util.isEmptyDir(dir) then
         lfs.rmdir(dir)
       end
     end)
@@ -256,13 +261,16 @@ local function apply_update(plugin_dir, extracted_plugin_dir)
   local old_files = collect_files(plugin_dir)
 
   for relative, old_path in pairs(old_files) do
-    if not new_files[relative] and not is_preserved_config(relative) and not is_updater_temp(relative) then
+    if not new_files[relative]
+        and not is_preserved_config(relative)
+        and not is_preserved_user_data(relative)
+        and not is_updater_temp(relative) then
       os.remove(old_path)
     end
   end
 
   for relative, source_path in pairs(new_files) do
-    if not is_preserved_config(relative) then
+    if not is_preserved_config(relative) and not is_preserved_user_data(relative) then
       local destination = path_join(plugin_dir, relative)
       local ok, err = ensure_parent_dir(destination)
       if not ok then

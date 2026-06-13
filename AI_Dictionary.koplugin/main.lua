@@ -284,7 +284,7 @@ local function render_answer(chatgpt_viewer, is_dictionary, title_case_selection
     end
 end
 
-local function stream_answer(chatgpt_viewer, message_history, is_dictionary, title_case_selection, preface_with_selection)
+local function stream_answer(chatgpt_viewer, message_history, is_dictionary, title_case_selection, preface_with_selection, on_success)
   local current_viewer = chatgpt_viewer
   local last_rendered_token_count = 0
   local last_rendered_dictionary_boundary = 0
@@ -320,6 +320,9 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
     on_done = function(accumulated)
       if accumulated ~= last_rendered_answer then
         update_viewer(accumulated)
+      end
+      if on_success then
+        on_success(accumulated)
       end
     end,
     on_error = function(err)
@@ -419,12 +422,6 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   ui.highlight:onClose()
   UIManager:show(chatgpt_viewer)
 
-  local file_path = self.ui.document.file
-
-  if not string.find(file_path, "- AI Lookups") then
-    save_lookup_entry(file_path, safeTitle, dialog_title, safeSelectionInContext)
-  end
-
   local replacements = {
     ["{title}"] = safeTitle,
     ["{author}"] = safeAuthor,
@@ -453,7 +450,11 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
       content = lastQuery
     }}
 
-    stream_answer(chatgpt_viewer, message_history, lastIsDictionary, titleCaseSelection, preface_with_selection)
+    stream_answer(chatgpt_viewer, message_history, lastIsDictionary, titleCaseSelection, preface_with_selection, function(answer)
+      if lastIsDictionary and answer and answer ~= "" then
+        save_lookup_entry(self.path, safeHighlightedText, safeSelectionInContext)
+      end
+    end)
   end)
 end
 
