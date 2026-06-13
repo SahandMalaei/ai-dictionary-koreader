@@ -5,6 +5,8 @@ local _ = require("gettext")
 
 local showLoadingDialog = require("dialogs")
 
+local InfoMessage = require("ui/widget/infomessage")
+local InputDialog = require("ui/widget/inputdialog")
 local UIManager = require("ui/uimanager")
 local ChatGPTViewer = require("chatgptviewer")
 local handleNewQuestion = require("dialogs")
@@ -31,6 +33,19 @@ local DICTIONARY_SECTION_LABELS = { "Definition", "Example", "Synonyms", "Paraph
 
 local OFFLINE_WAIT_MESSAGE = "You are offline. AI lookup requires an active internet connection."
 local ONLINE_WAIT_MESSAGE = "Getting the answer..."
+
+local CORE_CONFIGURATION_KEYS = { "api_key", "provider", "model" }
+local CORE_CONFIGURATION_KEY_SET = {
+  api_key = true,
+  provider = true,
+  model = true,
+}
+local CONFIGURATION_LABELS = {
+  api_key = "API key",
+  provider = "Provider URL",
+  model = "Model",
+  additional_parameters = "Additional parameters",
+}
 
 local AskGPT = InputContainer:new {
   name = "askgpt",
@@ -60,6 +75,166 @@ end
 
 local function capitalize_first(s)
     return (s:gsub("^%l", string.upper))
+end
+
+local function get_configuration_path(plugin)
+  local base_path = plugin and plugin.path
+  if base_path and base_path ~= "" then
+    return base_path .. "/configuration.lua"
+  end
+  return "AI_Dictionary.koplugin/configuration.lua"
+end
+
+local function load_configuration()
+  package.loaded["configuration"] = nil
+  local ok, config = pcall(function() return require("configuration") end)
+  if ok and type(config) == "table" then
+    return config
+  end
+  return {
+    api_key = "",
+    provider = "https://api.openai.com/v1/chat/completions",
+    model = "gpt-5-nano",
+  }
+end
+
+local function is_array(value)
+  if type(value) ~= "table" then
+    return false
+  end
+
+  local count = 0
+  for key, _ in pairs(value) do
+    if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
+      return false
+    end
+    count = count + 1
+  end
+  return count == #value
+end
+
+local function is_lua_identifier(value)
+  return type(value) == "string" and value:match("^[A-Za-z_][A-Za-z0-9_]*$") ~= nil
+end
+
+local function serialize_lua_value(value, indent)
+  indent = indent or ""
+  local value_type = type(value)
+
+  if value_type == "string" then
+    return string.format("%q", value)
+  elseif value_type == "number" or value_type == "boolean" then
+    return tostring(value)
+  elseif value_type == "table" then
+    local next_indent = indent .. "    "
+    local lines = { "{" }
+
+    if is_array(value) then
+      for _, item in ipairs(value) do
+        table.insert(lines, next_indent .. serialize_lua_value(item, next_indent) .. ",")
+      end
+    else
+      local keys = {}
+      for key, _ in pairs(value) do
+        table.insert(keys, key)
+      end
+      table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+
+      for _, key in ipairs(keys) do
+        local key_text
+        if is_lua_identifier(key) then
+          key_text = key
+        else
+          key_text = "[" .. serialize_lua_value(key, next_indent) .. "]"
+        end
+        table.insert(lines, next_indent .. key_text .. " = " .. serialize_lua_value(value[key], next_indent) .. ",")
+      end
+    end
+
+    table.insert(lines, indent .. "}")
+    return table.concat(lines, "\n")
+  elseif value == nil then
+    return "nil"
+  end
+
+  return "nil"
+end
+
+local function serialize_configuration(configuration)
+  local lines = { "local CONFIGURATION = {" }
+  local written = {}
+
+  local function write_key(key)
+    if configuration[key] ~= nil then
+      local key_text
+      if is_lua_identifier(key) then
+        key_text = key
+      else
+        key_text = "[" .. serialize_lua_value(key, "    ") .. "]"
+      end
+      table.insert(lines, "    " .. key_text .. " = " .. serialize_lua_value(configuration[key], "    ") .. ",")
+      written[key] = true
+    end
+  end
+
+  for _, key in ipairs(CORE_CONFIGURATION_KEYS) do
+    write_key(key)
+  end
+
+  local keys = {}
+  for key, _ in pairs(configuration) do
+    if not written[key] then
+      table.insert(keys, key)
+    end
+  end
+  table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+
+  for _, key in ipairs(keys) do
+    write_key(key)
+  end
+
+  table.insert(lines, "}")
+  table.insert(lines, "")
+  table.insert(lines, "return CONFIGURATION")
+  table.insert(lines, "")
+  return table.concat(lines, "\n")
+end
+
+local function parse_lua_literal(input)
+  local loader = loadstring or load
+  local chunk, compile_error = loader("return " .. tostring(input or ""))
+  if not chunk then
+    return nil, compile_error
+  end
+
+  local ok, value = pcall(chunk)
+  if not ok then
+    return nil, value
+  end
+  return value
+end
+
+local function display_configuration_value(key, value)
+  if value == nil then
+    return "not set"
+  end
+  if key == "api_key" and type(value) == "string" and value ~= "" then
+    if #value <= 10 then
+      return "set"
+    end
+    return value:sub(1, 6) .. "..." .. value:sub(-4)
+  end
+  if type(value) == "table" then
+    return serialize_lua_value(value):gsub("\n", " ")
+  end
+  return tostring(value)
+end
+
+local function show_message(text)
+  UIManager:show(InfoMessage:new {
+    text = text,
+    timeout = 3,
+  })
 end
 
 local function repaint_now()
@@ -307,7 +482,265 @@ function AskGPT:Regenerate(chatgpt_viewer)
   end)
 end
 
+function AskGPT:saveConfiguration(configuration)
+  local configuration_path = get_configuration_path(self)
+  local file, err = io.open(configuration_path, "w")
+  if not file then
+    show_message("Could not save configuration.lua:\n" .. tostring(err))
+    return false
+  end
+
+  file:write(serialize_configuration(configuration))
+  file:close()
+  package.loaded["configuration"] = nil
+  show_message("AI Dictionary settings saved.")
+  return true
+end
+
+function AskGPT:editConfigurationValue(key, parse_as_literal)
+  local configuration = load_configuration()
+  local current_value = configuration[key]
+  local current_type = type(current_value)
+  local label = CONFIGURATION_LABELS[key] or tostring(key)
+  local input_value
+
+  if parse_as_literal or current_type == "table" then
+    input_value = serialize_lua_value(current_value)
+  else
+    input_value = current_value == nil and "" or tostring(current_value)
+  end
+
+  local input_dialog
+  input_dialog = InputDialog:new {
+    title = "Edit " .. label,
+    input = input_value,
+    input_type = current_type == "number" and "number" or "text",
+    description = (parse_as_literal or current_type == "table") and "Enter a Lua literal: string, number, boolean, or table." or nil,
+    buttons = {
+      {
+        {
+          text = _("Cancel"),
+          callback = function()
+            UIManager:close(input_dialog)
+          end,
+        },
+        {
+          text = _("Save"),
+          is_enter_default = true,
+          callback = function()
+            local raw_value = input_dialog:getInputText()
+            local new_value = raw_value
+
+            if current_type == "number" then
+              new_value = tonumber(raw_value)
+              if new_value == nil then
+                show_message("Please enter a valid number.")
+                return
+              end
+            elseif current_type == "boolean" then
+              new_value = raw_value == "true" or raw_value == "1"
+            elseif parse_as_literal or current_type == "table" then
+              local parsed_value, parse_error = parse_lua_literal(raw_value)
+              if parsed_value == nil then
+                show_message("Please enter a valid non-nil Lua value.\n" .. tostring(parse_error or ""))
+                return
+              end
+              new_value = parsed_value
+            end
+
+            configuration[key] = new_value
+            if self:saveConfiguration(configuration) then
+              UIManager:close(input_dialog)
+            end
+          end,
+        },
+      },
+    },
+  }
+
+  UIManager:show(input_dialog)
+  input_dialog:onShowKeyboard()
+end
+
+function AskGPT:addConfigurationValue()
+  local key_dialog
+  key_dialog = InputDialog:new {
+    title = "Add setting",
+    input = "",
+    input_type = "text",
+    description = "Enter a Lua identifier, for example: additional_parameters",
+    buttons = {
+      {
+        {
+          text = _("Cancel"),
+          callback = function()
+            UIManager:close(key_dialog)
+          end,
+        },
+        {
+          text = _("Next"),
+          is_enter_default = true,
+          callback = function()
+            local key = key_dialog:getInputText()
+            if not is_lua_identifier(key) then
+              show_message("Setting names must be Lua identifiers.")
+              return
+            end
+
+            local configuration = load_configuration()
+            if configuration[key] ~= nil then
+              show_message("That setting already exists.")
+              return
+            end
+
+            UIManager:close(key_dialog)
+            self:editNewConfigurationLiteral(key)
+          end,
+        },
+      },
+    },
+  }
+
+  UIManager:show(key_dialog)
+  key_dialog:onShowKeyboard()
+end
+
+function AskGPT:editNewConfigurationLiteral(key)
+  local value_dialog
+  value_dialog = InputDialog:new {
+    title = "Set " .. key,
+    input = "\"\"",
+    input_type = "text",
+    description = "Enter a Lua literal: string, number, boolean, or table.",
+    buttons = {
+      {
+        {
+          text = _("Cancel"),
+          callback = function()
+            UIManager:close(value_dialog)
+          end,
+        },
+        {
+          text = _("Save"),
+          is_enter_default = true,
+          callback = function()
+            local value, parse_error = parse_lua_literal(value_dialog:getInputText())
+            if value == nil then
+              show_message("Please enter a valid non-nil Lua value.\n" .. tostring(parse_error or ""))
+              return
+            end
+
+            local configuration = load_configuration()
+            configuration[key] = value
+            if self:saveConfiguration(configuration) then
+              UIManager:close(value_dialog)
+            end
+          end,
+        },
+      },
+    },
+  }
+
+  UIManager:show(value_dialog)
+  value_dialog:onShowKeyboard()
+end
+
+function AskGPT:deleteConfigurationValue(key)
+  local configuration = load_configuration()
+  configuration[key] = nil
+  self:saveConfiguration(configuration)
+end
+
+function AskGPT:getSettingsMenuItems()
+  local configuration = load_configuration()
+  local items = {}
+  local written = {}
+
+  local function add_value_item(key)
+    local value = configuration[key]
+    local label = CONFIGURATION_LABELS[key] or tostring(key)
+    written[key] = true
+
+    if type(value) == "boolean" then
+      table.insert(items, {
+        text = label,
+        checked_func = function() return load_configuration()[key] == true end,
+        callback = function()
+          local updated_configuration = load_configuration()
+          updated_configuration[key] = not updated_configuration[key]
+          self:saveConfiguration(updated_configuration)
+        end,
+      })
+    else
+      table.insert(items, {
+        text = label .. ": " .. display_configuration_value(key, value),
+        callback = function()
+          self:editConfigurationValue(key, not CORE_CONFIGURATION_KEY_SET[key])
+        end,
+      })
+    end
+  end
+
+  for _, key in ipairs(CORE_CONFIGURATION_KEYS) do
+    add_value_item(key)
+  end
+
+  local custom_keys = {}
+  for key, _ in pairs(configuration) do
+    if not written[key] then
+      table.insert(custom_keys, key)
+    end
+  end
+  table.sort(custom_keys, function(a, b) return tostring(a) < tostring(b) end)
+
+  for _, key in ipairs(custom_keys) do
+    add_value_item(key)
+  end
+
+  table.insert(items, {
+    text = "Add setting",
+    callback = function()
+      self:addConfigurationValue()
+    end,
+  })
+
+  local delete_items = {}
+  for _, key in ipairs(custom_keys) do
+    if not CORE_CONFIGURATION_KEY_SET[key] then
+      table.insert(delete_items, {
+        text = tostring(key),
+        callback = function()
+          self:deleteConfigurationValue(key)
+        end,
+      })
+    end
+  end
+
+  if #delete_items > 0 then
+    table.insert(items, {
+      text = "Delete custom setting",
+      sub_item_table = delete_items,
+    })
+  end
+
+  return items
+end
+
+function AskGPT:addToMainMenu(menu_items)
+  menu_items.ai_dictionary_settings = {
+    text = "AI Dictionary settings",
+    sorting_hint = "more_tools",
+    sub_item_table_func = function()
+      return self:getSettingsMenuItems()
+    end,
+  }
+end
+
 function AskGPT:init()
+  if self.ui and self.ui.menu then
+    self.ui.menu:registerToMainMenu(self)
+  end
+
   self.ui.highlight:addToHighlightDialog("aidictionary_1", function(_reader_highlight_instance)
     return {
       text = _("AI Explain"),

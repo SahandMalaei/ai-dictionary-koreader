@@ -1,5 +1,4 @@
 local api_key = nil
-local CONFIGURATION = nil
 
 local success, result = pcall(function() return require("api_key") end)
 if success then
@@ -8,11 +7,15 @@ else
   print("api_key.lua not found, skipping...")
 end
 
-success, result = pcall(function() return require("configuration") end)
-if success then
-  CONFIGURATION = result
-else
+local function loadConfiguration()
+  package.loaded["configuration"] = nil
+  local ok, config = pcall(function() return require("configuration") end)
+  if ok then
+    return config
+  end
+
   print("configuration.lua not found, skipping...")
+  return nil
 end
 
 local https = require("ssl.https")
@@ -68,9 +71,9 @@ local function parseSseBuffer(buffer, on_payload)
   return buffer
 end
 
-local function buildRequestBody(message_history)
-  local api_url = CONFIGURATION and CONFIGURATION.provider or "https://api.openai.com/v1/chat/completions"
-  local llm = CONFIGURATION and CONFIGURATION.model or "gpt-5-nano"
+local function buildRequestBody(message_history, configuration)
+  local api_url = configuration and configuration.provider or "https://api.openai.com/v1/chat/completions"
+  local llm = configuration and configuration.model or "gpt-5-nano"
 
   local requestBodyTable = {
     model = llm,
@@ -83,8 +86,8 @@ local function buildRequestBody(message_history)
     }
   end
 
-  if CONFIGURATION and CONFIGURATION.additional_parameters then
-    for key, value in pairs(CONFIGURATION.additional_parameters) do
+  if configuration and configuration.additional_parameters then
+    for key, value in pairs(configuration.additional_parameters) do
       requestBodyTable[key] = value
     end
   end
@@ -97,13 +100,14 @@ end
 local function queryChatGPTStream(message_history, opts)
   opts = opts or {}
 
-  local api_key_value = CONFIGURATION and CONFIGURATION.api_key or api_key
+  local configuration = loadConfiguration()
+  local api_key_value = configuration and configuration.api_key or api_key
   if not api_key_value or api_key_value == "" then
     if opts.on_error then opts.on_error("No API key configured.") end
     return function() end
   end
 
-  local api_url, requestBody = buildRequestBody(message_history)
+  local api_url, requestBody = buildRequestBody(message_history, configuration)
   local accumulated = ""
   local token_count = 0
   local response_buffer = ""

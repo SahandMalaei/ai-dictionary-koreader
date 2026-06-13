@@ -1,5 +1,4 @@
 local api_key = nil
-local CONFIGURATION = nil
 
 -- Attempt to load the api_key module. IN A LATER VERSION, THIS WILL BE REMOVED
 local success, result = pcall(function() return require("api_key") end)
@@ -9,12 +8,15 @@ else
   print("api_key.lua not found, skipping...")
 end
 
--- Attempt to load the configuration module
-success, result = pcall(function() return require("configuration") end)
-if success then
-  CONFIGURATION = result
-else
+local function loadConfiguration()
+  package.loaded["configuration"] = nil
+  local ok, config = pcall(function() return require("configuration") end)
+  if ok then
+    return config
+  end
+
   print("configuration.lua not found, skipping...")
+  return nil
 end
 
 -- Define your queryChatGPT function
@@ -33,9 +35,10 @@ local function isOpenRouterUrl(url)
 end
 
 local function queryChatGPT(message_history)
-  local api_key_value = CONFIGURATION and CONFIGURATION.api_key or api_key
-  local api_url = CONFIGURATION and CONFIGURATION.provider or "https://api.openai.com/v1/chat/completions"
-  local llm = CONFIGURATION and CONFIGURATION.model or "gpt-5-nano"
+  local configuration = loadConfiguration()
+  local api_key_value = configuration and configuration.api_key or api_key
+  local api_url = configuration and configuration.provider or "https://api.openai.com/v1/chat/completions"
+  local llm = configuration and configuration.model or "gpt-5-nano"
 
   local requestBodyTable = {
     model = llm,
@@ -50,8 +53,8 @@ local function queryChatGPT(message_history)
     }
   end
 
-  if CONFIGURATION and CONFIGURATION.additional_parameters then
-    for key, value in pairs(CONFIGURATION.additional_parameters) do
+  if configuration and configuration.additional_parameters then
+    for key, value in pairs(configuration.additional_parameters) do
       requestBodyTable[key] = value
     end
   end
