@@ -715,13 +715,6 @@ function AskGPT:getSettingsMenuItems()
     add_value_item(key)
   end
 
-  table.insert(items, {
-    text = "Add setting",
-    callback = function()
-      self:addConfigurationValue()
-    end,
-  })
-
   local delete_items = {}
   for _, key in ipairs(custom_keys) do
     if not CORE_CONFIGURATION_KEY_SET[key] then
