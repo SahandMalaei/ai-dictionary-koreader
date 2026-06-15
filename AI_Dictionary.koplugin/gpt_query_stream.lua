@@ -23,13 +23,21 @@ local http = require("socket.http")
 local ltn12 = require("ltn12")
 local json = require("json")
 
-local REQUEST_TIMEOUT_SECONDS = 5
+local REQUEST_TIMEOUT_SECONDS = 20
 
 https.TIMEOUT = REQUEST_TIMEOUT_SECONDS
 http.TIMEOUT = REQUEST_TIMEOUT_SECONDS
 
 local function isOpenRouterUrl(url)
   return type(url) == "string" and url:lower():find("openrouter.ai", 1, true) ~= nil
+end
+
+local function isOpenAIUrl(url)
+  return type(url) == "string" and url:lower():find("api.openai.com", 1, true) ~= nil
+end
+
+local function isGpt5Model(model)
+  return type(model) == "string" and model:lower():match("^gpt%-5") ~= nil
 end
 
 local function countTokens(text)
@@ -79,6 +87,11 @@ local function buildRequestBody(message_history, configuration, request_paramete
     model = llm,
     messages = message_history,
   }
+
+  if isOpenAIUrl(api_url) and isGpt5Model(llm) then
+    requestBodyTable.reasoning_effort = "low"
+    requestBodyTable.verbosity = "low"
+  end
 
   if isOpenRouterUrl(api_url) then
     requestBodyTable.provider = {
@@ -172,7 +185,11 @@ local function queryChatGPTStream(message_history, opts)
     return function() end
   end
 
-  if tostring(code) ~= "200" then
+  if (code == "wantread" or code == "timeout") and accumulated ~= "" then
+    if opts.on_done then
+      opts.on_done(accumulated)
+    end
+  elseif tostring(code) ~= "200" then
     if opts.on_error then
       opts.on_error(tostring(code) .. "\n\nResponse: " .. table.concat(responseBody))
     end

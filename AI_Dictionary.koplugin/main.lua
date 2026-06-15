@@ -307,6 +307,10 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
   local last_rendered_answer = nil
   local cancel_stream
 
+  local function is_stream_transport_error(err)
+    return tostring(err):match("^wantread") ~= nil or tostring(err):match("^timeout") ~= nil
+  end
+
   local function update_viewer(answer)
     last_rendered_answer = answer
     current_viewer = render_answer(
@@ -343,7 +347,16 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
       end
     end,
     on_error = function(err)
-      update_viewer("Error querying AI: " .. tostring(err))
+      if is_stream_transport_error(err) then
+        update_viewer("Streaming stalled; retrying without streaming...")
+        local answer = queryChatGPT(message_history)
+        update_viewer(answer)
+        if on_success and answer and answer ~= "" and not tostring(answer):match("^Error querying AI:") then
+          on_success(answer)
+        end
+      else
+        update_viewer("Error querying AI: " .. tostring(err))
+      end
     end,
   })
 

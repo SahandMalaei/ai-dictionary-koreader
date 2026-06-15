@@ -25,13 +25,21 @@ local http = require("socket.http") -- needed to cap the pre-SSL socket connect 
 local ltn12 = require("ltn12")
 local json = require("json")
 
-local REQUEST_TIMEOUT_SECONDS = 5
+local REQUEST_TIMEOUT_SECONDS = 20
 
-https.TIMEOUT = REQUEST_TIMEOUT_SECONDS -- fail fast once TLS session exists
+https.TIMEOUT = REQUEST_TIMEOUT_SECONDS -- cap reads once the TLS session exists
 http.TIMEOUT = REQUEST_TIMEOUT_SECONDS -- also cap DNS lookup + TCP connect latency
 
 local function isOpenRouterUrl(url)
   return type(url) == "string" and url:lower():find("openrouter.ai", 1, true) ~= nil
+end
+
+local function isOpenAIUrl(url)
+  return type(url) == "string" and url:lower():find("api.openai.com", 1, true) ~= nil
+end
+
+local function isGpt5Model(model)
+  return type(model) == "string" and model:lower():match("^gpt%-5") ~= nil
 end
 
 local function queryChatGPT(message_history)
@@ -63,7 +71,7 @@ local function queryChatGPT(message_history)
 
   local headers = {
     ["Content-Type"] = "application/json",
-    --["Content-Length"] = tostring(#requestBody),
+    ["Content-Length"] = tostring(#requestBody),
     ["Authorization"] = "Bearer " .. api_key_value,
   }
 
