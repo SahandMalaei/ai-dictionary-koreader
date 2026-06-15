@@ -150,8 +150,6 @@ local function build_prompt(entries, timeframe)
       "Number of lookups: x\n\n" ..
       "Main pattern:\n" ..
       "[Find a pattern in the lookups, something that has learning value]\n\n" ..
-      "Best words to review:\n" ..
-      "[Out of the lookups, choose up to 10 words that are worth a review, separated by commas]\n\n" ..
       "Practice:\n" ..
       "[Up to 10 fill-in-the-blank questions (as long as there are enough lookups) with the most useful lookups]\n" ..
       "Answers: [the answers to the questions, separated by commas and each preceded by a number (e.g. 1. x, 2. y, etc.). make sure the answers are adapted to the context of the questions.]\n\n" ..
