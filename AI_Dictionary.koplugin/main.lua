@@ -73,8 +73,26 @@ local function ptf_bold(s)
     return PTF_BOLD_START .. s .. PTF_BOLD_END
 end
 
+local function format_inline_markdown_emphasis(text)
+    if type(text) ~= "string" then
+        return text
+    end
+
+    -- Convert Markdown-style bold/emphasis to KOReader PTF bold markers.
+    -- The viewer is not a Markdown renderer, so without this, model output like
+    -- *word* or **word** is shown with literal asterisks.
+    text = text:gsub("%*%*([^*\r\n]+)%*%*", function(s)
+        return ptf_bold(s)
+    end)
+    text = text:gsub("%*([^*%s][^*\r\n]-)%*", function(s)
+        return ptf_bold(s)
+    end)
+
+    return text
+end
+
 local function format_dictionary_output(selection, answer)
-    local output = answer or ""
+    local output = format_inline_markdown_emphasis(answer or "")
     local header = nil
     if selection and selection ~= "" then
         header = PTF_HEADER .. ptf_bold(selection)
