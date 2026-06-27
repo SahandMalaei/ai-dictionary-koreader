@@ -17,7 +17,7 @@ local queryStream = require("gpt_query_stream")
 local LookupsReport = require("lookups_report")
 local Updater = require("updater")
 local AudioPlayer = require("audio_player")
-local OpenRouterTTS = require("openrouter_tts")
+local Pronunciation = require("pronunciation")
 
 local clean_up_string = require("string_cleanup")
 
@@ -51,6 +51,11 @@ local CONFIGURATION_LABELS = {
   provider = "Provider URL",
   model = "Model",
   additional_parameters = "Additional parameters",
+  voice_api_key = "Voice API key",
+  voice_provider = "Voice provider URL",
+  voice_model = "Voice model",
+  voice_voice = "Voice",
+  tts_speed = "Voice speed",
 }
 
 local AI_EXPLAIN_WEB_SEARCH_PARAMETERS = {
@@ -254,7 +259,7 @@ local function display_configuration_value(key, value)
   if value == nil then
     return "not set"
   end
-  if key == "api_key" and type(value) == "string" and value ~= "" then
+  if (key == "api_key" or key == "voice_api_key") and type(value) == "string" and value ~= "" then
     if #value <= 10 then
       return "set"
     end
@@ -469,7 +474,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   lastTitleCaseSelection = titleCaseSelection
   local isDictionaryQuery = dialog_title == "AI Dictionary"
   local ttsRequest = nil
-  if isDictionaryQuery and Device.isAndroid and Device:isAndroid() and OpenRouterTTS.is_enabled() then
+  if isDictionaryQuery and Device.isAndroid and Device:isAndroid() and Pronunciation.is_enabled() then
     ttsRequest = self:createDictionaryTTSRequest(safeHighlightedText)
   end
 
@@ -579,7 +584,7 @@ function AskGPT:startDictionaryTTSRequest(tts_request, play_when_ready)
   tts_request.in_progress = true
 
   UIManager:scheduleIn(0.01, function()
-    local audio_path, err = OpenRouterTTS.synthesize(tts_request.text, tts_request.plugin_dir)
+    local audio_path, err = Pronunciation.synthesize(tts_request.text, tts_request.plugin_dir)
     tts_request.in_progress = false
     if audio_path then
       tts_request.status = "ready"

@@ -4,10 +4,12 @@ local ltn12 = require("ltn12")
 local json = require("json")
 local lfs = require("libs/libkoreader-lfs")
 
-local OpenRouterTTS = {}
+local Pronunciation = {}
 
 local REQUEST_TIMEOUT_SECONDS = 45
-local DEFAULT_VOICE = "Ara"
+local DEFAULT_OPENAI_PROVIDER = "https://api.openai.com/v1/audio/speech"
+local DEFAULT_OPENROUTER_VOICE = "Ara"
+local DEFAULT_OPENAI_VOICE = "nova"
 local DEFAULT_INSTRUCTIONS = "Speak clearly and loudly in natural American English with a female voice. Use precise dictionary-style pronunciation."
 local DEFAULT_RESPONSE_FORMAT = "mp3"
 
@@ -79,21 +81,37 @@ local function has_value(value)
   return type(value) == "string" and value:match("%S") ~= nil
 end
 
-function OpenRouterTTS.is_enabled()
+local function is_openai_url(url)
+  return type(url) == "string" and url:lower():find("api.openai.com", 1, true) ~= nil
+end
+
+local function get_voice_provider(configuration)
+  if configuration and has_value(configuration.voice_provider) then
+    return configuration.voice_provider
+  end
+  return DEFAULT_OPENAI_PROVIDER
+end
+
+local function get_default_voice(provider)
+  if is_openai_url(provider) then
+    return DEFAULT_OPENAI_VOICE
+  end
+  return DEFAULT_OPENROUTER_VOICE
+end
+
+function Pronunciation.is_enabled()
   local configuration = load_configuration()
   return configuration
     and has_value(configuration.voice_api_key)
-    and has_value(configuration.voice_provider)
     and has_value(configuration.voice_model)
 end
 
-function OpenRouterTTS.synthesize(text, plugin_dir)
+function Pronunciation.synthesize(text, plugin_dir)
   local configuration = load_configuration()
   if not (configuration
       and has_value(configuration.voice_api_key)
-      and has_value(configuration.voice_provider)
       and has_value(configuration.voice_model)) then
-    return nil, "Voice TTS is disabled. Set voice_model, voice_api_key, and voice_provider in configuration.lua."
+    return nil, "Voice TTS is disabled. Set voice_model and voice_api_key in configuration.lua."
   end
 
   if not text or text == "" then
@@ -103,10 +121,12 @@ function OpenRouterTTS.synthesize(text, plugin_dir)
   plugin_dir = plugin_dir or "AI_Dictionary.koplugin"
 
   local response_format = DEFAULT_RESPONSE_FORMAT
+  local voice_provider = get_voice_provider(configuration)
+  local voice = has_value(configuration.voice_voice) and configuration.voice_voice or get_default_voice(voice_provider)
   local request_body = json.encode({
     input = text,
     model = configuration.voice_model,
-    voice = has_value(configuration.voice_voice) and configuration.voice_voice or DEFAULT_VOICE,
+    voice = voice,
     instructions = DEFAULT_INSTRUCTIONS,
     response_format = response_format,
     speed = (configuration and configuration.tts_speed) or 1,
@@ -114,7 +134,7 @@ function OpenRouterTTS.synthesize(text, plugin_dir)
 
   local response_body = {}
   local ok, code = https.request {
-    url = configuration.voice_provider,
+    url = voice_provider,
     method = "POST",
     headers = {
       ["Content-Type"] = "application/json",
@@ -128,7 +148,7 @@ function OpenRouterTTS.synthesize(text, plugin_dir)
 
   local body = table.concat(response_body)
   if tostring(code) ~= "200" then
-    local err = "OpenRouter TTS failed: " .. tostring(code) .. "\n" .. tostring(body)
+    local err = "Voice TTS failed: " .. tostring(code) .. "\n" .. tostring(body)
     logger.err("AI Dictionary TTS:", err)
     return nil, err
   end
@@ -147,4 +167,4 @@ function OpenRouterTTS.synthesize(text, plugin_dir)
   return audio_path
 end
 
-return OpenRouterTTS
+return Pronunciation

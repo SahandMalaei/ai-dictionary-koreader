@@ -27,6 +27,18 @@ local CONFIGURATION = {
 
 return CONFIGURATION
 ```
+
+The AI Dictionary popup can also show a Pronounce button on Android when text-to-speech is configured. OpenAI TTS works by setting `voice_api_key`, `voice_provider`, `voice_model`, and optionally `voice_voice` in `configuration.lua`:
+
+```lua
+voice_api_key = "YOUR_OPENAI_API_KEY",
+voice_provider = "https://api.openai.com/v1/audio/speech",
+voice_model = "gpt-4o-mini-tts",
+voice_voice = "nova",
+```
+
+OpenRouter TTS is still supported with `voice_provider = "https://openrouter.ai/api/v1/audio/speech"`, `voice_model = "x-ai/grok-voice-tts-1.0"`, and a compatible voice such as `"Ara"`.
+
 5. Copy the folder named `AI_Dictionary.koplugin` into the `koreader/plugins` directory on your device.
 6. You'll most probably want to disable the automatic launch of KOReader's default dictionary functionality on single-word selection. To do that, open KOReader's top menu (tap on the top part of the screen), go to `Settings` (the gear icon), select `Long-press on text` and disable `Dictionary on single word selection`.
 7. You are all set! Now simply select some word(s)/text, and use one of the options the plugins gives you ("AI Dictionary", "AI Explain", "AI English Simplify") to get answers.

@@ -3,15 +3,17 @@ local CONFIGURATION = {
     provider = "https://api.openai.com/v1/chat/completions",
     model = "gpt-5-nano",
 
-    -- Text-to-speech is disabled unless all three values below are set.
-    -- Example provider: "https://openrouter.ai/api/v1/audio/speech"
-    -- Example model: "x-ai/grok-voice-tts-1.0"
+    -- Text-to-speech is disabled unless voice_api_key and voice_model are set.
+    -- OpenAI example provider: "https://api.openai.com/v1/audio/speech"
+    -- OpenAI example model: "gpt-4o-mini-tts"
+    -- OpenRouter example provider: "https://openrouter.ai/api/v1/audio/speech"
+    -- OpenRouter example model: "x-ai/grok-voice-tts-1.0"
     voice_api_key = "",
-    voice_provider = "",
+    voice_provider = "https://api.openai.com/v1/audio/speech",
     voice_model = "",
 
-    -- Optional voice choice.
-    voice_voice = "Ara",
+    -- Optional voice choice. Use "Nova" for OpenAI or "Ara" for OpenRouter Grok Voice.
+    voice_voice = "nova",
 }
 
 return CONFIGURATION
