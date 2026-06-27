@@ -1020,8 +1020,8 @@ function AskGPT:init()
             "I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
             "This is the context where it appears: '...{context}...'\n" ..
             "Use web search economically to identify or verify the book, character, place, term, reference, or allusion if that helps. " ..
-            "Explain it in the context/lore of the book, and help me understand it better (like Amazon Kindle's X-Ray, but much more concise). " ..
-            "No spoilers if it's fiction. Plain text. Keep your explanation concise and brief (under 90 words), and ask no questions at the end.",
+            "Explain it in the context/lore of the book, and help me understand it better (like Amazon Kindle's X-Ray, but more concise). " ..
+            "No spoilers if it's fiction. Plain text. Keep your explanation brief (under 150 words), and ask no questions at the end.",
             AI_EXPLAIN_WEB_SEARCH_PARAMETERS)
       end,
     }
