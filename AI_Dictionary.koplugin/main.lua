@@ -96,6 +96,23 @@ local function capitalize_first(s)
     return (s:gsub("^%l", string.upper))
 end
 
+local function trim_to_dictionary_limit(text, limit)
+  text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  if #text < limit then
+    return text
+  end
+
+  while #text >= limit do
+    local trimmed = text:gsub("%s+%S+$", "")
+    if trimmed == text or trimmed == "" then
+      return text:sub(1, limit - 1):gsub("%s+$", "")
+    end
+    text = trimmed
+  end
+
+  return text
+end
+
 local function get_configuration_path(plugin)
   local base_path = plugin and plugin.path
   if base_path and base_path ~= "" then
@@ -445,6 +462,10 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   local safeSelectionInContext = clean_up_string(selectionInContext, MAX_HL)
 
   local titleCaseSelection = capitalize_first(safeHighlightedText)
+  if dialog_title == "AI Dictionary" then
+    safeHighlightedText = trim_to_dictionary_limit(safeHighlightedText, 64)
+    titleCaseSelection = capitalize_first(safeHighlightedText)
+  end
   lastTitleCaseSelection = titleCaseSelection
   local isDictionaryQuery = dialog_title == "AI Dictionary"
   local ttsRequest = nil
