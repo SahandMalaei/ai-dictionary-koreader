@@ -7,7 +7,8 @@ local lfs = require("libs/libkoreader-lfs")
 local OpenRouterTTS = {}
 
 local REQUEST_TIMEOUT_SECONDS = 45
-local DEFAULT_VOICE = "Eve"
+local DEFAULT_VOICE = "Ara"
+local DEFAULT_INSTRUCTIONS = "Speak clearly and loudly in natural American English with a female voice. Use precise dictionary-style pronunciation."
 local DEFAULT_RESPONSE_FORMAT = "mp3"
 
 https.TIMEOUT = REQUEST_TIMEOUT_SECONDS
@@ -105,7 +106,8 @@ function OpenRouterTTS.synthesize(text, plugin_dir)
   local request_body = json.encode({
     input = text,
     model = configuration.voice_model,
-    voice = (configuration and configuration.tts_voice) or DEFAULT_VOICE,
+    voice = has_value(configuration.voice_voice) and configuration.voice_voice or DEFAULT_VOICE,
+    instructions = DEFAULT_INSTRUCTIONS,
     response_format = response_format,
     speed = (configuration and configuration.tts_speed) or 1,
   })

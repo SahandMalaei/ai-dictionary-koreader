@@ -208,7 +208,7 @@ function ChatGPTViewer:init()
   }
   if self.onPronunciation then
     table.insert(default_buttons, {
-      text = _("🔊"),
+      text = _("🔉"),
       callback = function()
         self.onPronunciation()
       end,

@@ -267,6 +267,7 @@ public class TtsHelper implements TextToSpeech.OnInitListener {
             try {
                 mediaPlayer = new MediaPlayer();
                 mediaPlayer.setDataSource(path);
+                mediaPlayer.setVolume(1.0f, 1.0f);
                 mediaPlayer.setOnCompletionListener(mp -> {
                     playbackDone = true;
                     if (pipelineActive) {

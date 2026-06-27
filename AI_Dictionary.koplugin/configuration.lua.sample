@@ -9,6 +9,9 @@ local CONFIGURATION = {
     voice_api_key = "",
     voice_provider = "",
     voice_model = "",
+
+    -- Optional voice choice.
+    voice_voice = "Ara",
 }
 
 return CONFIGURATION
