@@ -1,7 +1,14 @@
 local CONFIGURATION = {
     api_key = "YOUR API KEY",
     provider = "https://api.openai.com/v1/chat/completions",
-    model = "gpt-5-nano"
+    model = "gpt-5-nano",
+
+    -- Text-to-speech is disabled unless all three values below are set.
+    -- Example provider: "https://openrouter.ai/api/v1/audio/speech"
+    -- Example model: "x-ai/grok-voice-tts-1.0"
+    voice_api_key = "",
+    voice_provider = "",
+    voice_model = "",
 }
 
 return CONFIGURATION

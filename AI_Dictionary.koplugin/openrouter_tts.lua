@@ -1,0 +1,148 @@
+local https = require("ssl.https")
+local http = require("socket.http")
+local ltn12 = require("ltn12")
+local json = require("json")
+local lfs = require("libs/libkoreader-lfs")
+
+local OpenRouterTTS = {}
+
+local REQUEST_TIMEOUT_SECONDS = 45
+local DEFAULT_VOICE = "Eve"
+local DEFAULT_RESPONSE_FORMAT = "mp3"
+
+https.TIMEOUT = REQUEST_TIMEOUT_SECONDS
+http.TIMEOUT = REQUEST_TIMEOUT_SECONDS
+
+local function get_logger()
+  local ok, logger = pcall(require, "logger")
+  if ok then
+    return logger
+  end
+  return {
+    warn = function() end,
+    err = function() end,
+    dbg = function() end,
+  }
+end
+
+local logger = get_logger()
+
+local function load_configuration()
+  package.loaded["configuration"] = nil
+  local ok, config = pcall(function() return require("configuration") end)
+  if ok and type(config) == "table" then
+    return config
+  end
+  return nil
+end
+
+local function path_join(...)
+  local parts = { ... }
+  local result = tostring(parts[1] or "")
+  for i = 2, #parts do
+    local part = tostring(parts[i] or "")
+    result = result:gsub("/+$", "") .. "/" .. part:gsub("^/+", "")
+  end
+  return result
+end
+
+local function ensure_dir(path)
+  if lfs.attributes(path, "mode") == "directory" then
+    return true
+  end
+  return lfs.mkdir(path)
+end
+
+local request_counter = 0
+
+local function next_audio_path(plugin_dir, extension)
+  request_counter = request_counter + 1
+  local audio_dir = path_join(plugin_dir, "Audio")
+  local timestamp = os.date("%Y%m%d_%H%M%S")
+  local filename = string.format("tts_%s_%03d.%s", timestamp, request_counter, extension)
+  return audio_dir, path_join(audio_dir, filename)
+end
+
+local function write_binary_file(path, data)
+  local file, err = io.open(path, "wb")
+  if not file then
+    return false, err
+  end
+
+  file:write(data)
+  file:close()
+  return true
+end
+
+local function has_value(value)
+  return type(value) == "string" and value:match("%S") ~= nil
+end
+
+function OpenRouterTTS.is_enabled()
+  local configuration = load_configuration()
+  return configuration
+    and has_value(configuration.voice_api_key)
+    and has_value(configuration.voice_provider)
+    and has_value(configuration.voice_model)
+end
+
+function OpenRouterTTS.synthesize(text, plugin_dir)
+  local configuration = load_configuration()
+  if not (configuration
+      and has_value(configuration.voice_api_key)
+      and has_value(configuration.voice_provider)
+      and has_value(configuration.voice_model)) then
+    return nil, "Voice TTS is disabled. Set voice_model, voice_api_key, and voice_provider in configuration.lua."
+  end
+
+  if not text or text == "" then
+    return nil, "No selected text to synthesize."
+  end
+
+  plugin_dir = plugin_dir or "AI_Dictionary.koplugin"
+
+  local response_format = DEFAULT_RESPONSE_FORMAT
+  local request_body = json.encode({
+    input = text,
+    model = configuration.voice_model,
+    voice = (configuration and configuration.tts_voice) or DEFAULT_VOICE,
+    response_format = response_format,
+    speed = (configuration and configuration.tts_speed) or 1,
+  })
+
+  local response_body = {}
+  local ok, code = https.request {
+    url = configuration.voice_provider,
+    method = "POST",
+    headers = {
+      ["Content-Type"] = "application/json",
+      ["Content-Length"] = tostring(#request_body),
+      ["Accept"] = "audio/mpeg",
+      ["Authorization"] = "Bearer " .. configuration.voice_api_key,
+    },
+    source = ltn12.source.string(request_body),
+    sink = ltn12.sink.table(response_body),
+  }
+
+  local body = table.concat(response_body)
+  if tostring(code) ~= "200" then
+    local err = "OpenRouter TTS failed: " .. tostring(code) .. "\n" .. tostring(body)
+    logger.err("AI Dictionary TTS:", err)
+    return nil, err
+  end
+
+  local audio_dir, audio_path = next_audio_path(plugin_dir, response_format)
+  if not ensure_dir(audio_dir) then
+    return nil, "Could not create Audio directory: " .. tostring(audio_dir)
+  end
+
+  local write_ok, write_err = write_binary_file(audio_path, body)
+  if not write_ok then
+    return nil, "Could not write TTS audio file: " .. tostring(write_err)
+  end
+
+  logger.warn("AI Dictionary TTS: saved", audio_path, "bytes=", #body)
+  return audio_path
+end
+
+return OpenRouterTTS

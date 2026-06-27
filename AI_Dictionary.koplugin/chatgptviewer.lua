@@ -71,6 +71,7 @@ local ChatGPTViewer = InputContainer:extend {
   find_centered_lines_count = 5, -- line with find results to be not far from the center
 
   onAskQuestion = nil,
+  onPronunciation = nil,
 
   benedict = nil,
   stream_cancel = nil,
@@ -204,14 +205,23 @@ function ChatGPTViewer:init()
       end,
       hold_callback = self.default_hold_callback,
     },
-    {
-      text = _("Close"),
+  }
+  if self.onPronunciation then
+    table.insert(default_buttons, {
+      text = _("🔊"),
       callback = function()
-        self:onClose()
+        self.onPronunciation()
       end,
       hold_callback = self.default_hold_callback,
-    },
-  }
+    })
+  end
+  table.insert(default_buttons, {
+    text = _("Close"),
+    callback = function()
+      self:onClose()
+    end,
+    hold_callback = self.default_hold_callback,
+  })
   local buttons = self.buttons_table or {}
   if self.add_default_buttons or not self.buttons_table then
     table.insert(buttons, default_buttons)
@@ -508,6 +518,7 @@ function ChatGPTViewer:update(new_text, new_header_text, options)
     height = self.height,
     buttons_table = self.buttons_table,
     onAskQuestion = self.onAskQuestion,
+    onPronunciation = self.onPronunciation,
     benedict = self.benedict,
     close_callback = self.close_callback,
     stream_cancel = self.stream_cancel,
