@@ -1041,6 +1041,8 @@ function AskGPT:addToMainMenu(menu_items)
 end
 
 function AskGPT:init()
+  Pronunciation.cleanup_audio(self.path)
+
   if self.ui and self.ui.menu then
     self.ui.menu:registerToMainMenu(self)
   end

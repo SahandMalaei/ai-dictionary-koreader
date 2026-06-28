@@ -82,6 +82,34 @@ local function write_binary_file(path, data)
   return true
 end
 
+function Pronunciation.cleanup_audio(plugin_dir)
+  plugin_dir = plugin_dir or "AI_Dictionary.koplugin"
+  local audio_dir = path_join(plugin_dir, "Audio")
+  if lfs.attributes(audio_dir, "mode") ~= "directory" then
+    return true
+  end
+
+  local ok, iter, dir_obj = pcall(lfs.dir, audio_dir)
+  if not ok then
+    logger.warn("AI Dictionary TTS: could not list Audio directory", audio_dir)
+    return false
+  end
+
+  for name in iter, dir_obj do
+    if name ~= "." and name ~= ".." and name:match("^tts_") then
+      local audio_path = path_join(audio_dir, name)
+      if lfs.attributes(audio_path, "mode") == "file" then
+        local remove_ok, remove_err = os.remove(audio_path)
+        if not remove_ok then
+          logger.warn("AI Dictionary TTS: could not remove old audio file", audio_path, remove_err)
+        end
+      end
+    end
+  end
+
+  return true
+end
+
 local function has_value(value)
   return type(value) == "string" and value:match("%S") ~= nil
 end
