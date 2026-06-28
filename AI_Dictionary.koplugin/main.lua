@@ -16,6 +16,8 @@ local queryChatGPT = require("gpt_query")
 local queryStream = require("gpt_query_stream")
 local LookupsReport = require("lookups_report")
 local Updater = require("updater")
+local AudioPlayer = require("audio_player")
+local Pronunciation = require("pronunciation")
 
 local clean_up_string = require("string_cleanup")
 
@@ -38,17 +40,37 @@ local DICTIONARY_SECTION_LABELS = { "Definition", "Example", "Synonyms", "Paraph
 local OFFLINE_WAIT_MESSAGE = "You are offline. AI lookup requires an active internet connection."
 local ONLINE_WAIT_MESSAGE = "Getting the answer..."
 
-local CORE_CONFIGURATION_KEYS = { "api_key", "provider", "model" }
+local CORE_CONFIGURATION_KEYS = {
+  "api_key",
+  "text_endpoint",
+  "text_model",
+  "voice_endpoint",
+  "voice_model",
+  "voice_voice",
+}
 local CORE_CONFIGURATION_KEY_SET = {
   api_key = true,
+  text_endpoint = true,
+  text_model = true,
+  voice_endpoint = true,
+  voice_model = true,
+  voice_voice = true,
+}
+local DEPRECATED_CONFIGURATION_KEYS = {
   provider = true,
   model = true,
+  voice_api_key = true,
+  voice_provider = true,
 }
 local CONFIGURATION_LABELS = {
   api_key = "API key",
-  provider = "Provider URL",
-  model = "Model",
+  text_endpoint = "Text endpoint URL",
+  text_model = "Text model",
   additional_parameters = "Additional parameters",
+  voice_endpoint = "Voice endpoint URL",
+  voice_model = "Voice model",
+  voice_voice = "Voice",
+  tts_speed = "Voice speed",
 }
 
 local AI_EXPLAIN_WEB_SEARCH_PARAMETERS = {
@@ -94,6 +116,23 @@ local function capitalize_first(s)
     return (s:gsub("^%l", string.upper))
 end
 
+local function trim_to_dictionary_limit(text, limit)
+  text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  if #text < limit then
+    return text
+  end
+
+  while #text >= limit do
+    local trimmed = text:gsub("%s+%S+$", "")
+    if trimmed == text or trimmed == "" then
+      return text:sub(1, limit - 1):gsub("%s+$", "")
+    end
+    text = trimmed
+  end
+
+  return text
+end
+
 local function get_configuration_path(plugin)
   local base_path = plugin and plugin.path
   if base_path and base_path ~= "" then
@@ -102,17 +141,27 @@ local function get_configuration_path(plugin)
   return "AI_Dictionary.koplugin/configuration.lua"
 end
 
+local function normalize_configuration(configuration)
+  if configuration.text_endpoint == nil then
+    configuration.text_endpoint = configuration.provider
+  end
+  if configuration.text_model == nil then
+    configuration.text_model = configuration.model
+  end
+  return configuration
+end
+
 local function load_configuration()
   package.loaded["configuration"] = nil
   local ok, config = pcall(function() return require("configuration") end)
   if ok and type(config) == "table" then
-    return config
+    return normalize_configuration(config)
   end
-  return {
+  return normalize_configuration({
     api_key = "",
-    provider = "https://api.openai.com/v1/chat/completions",
-    model = "gpt-5-nano",
-  }
+    text_endpoint = "https://api.openai.com/v1/chat/completions",
+    text_model = "gpt-5-nano",
+  })
 end
 
 local function is_array(value)
@@ -200,7 +249,7 @@ local function serialize_configuration(configuration)
 
   local keys = {}
   for key, _ in pairs(configuration) do
-    if not written[key] then
+    if not written[key] and not DEPRECATED_CONFIGURATION_KEYS[key] then
       table.insert(keys, key)
     end
   end
@@ -233,7 +282,10 @@ end
 
 local function display_configuration_value(key, value)
   if value == nil then
-    return "not set"
+    return "Not set"
+  end
+  if type(value) == "string" and value:match("%S") == nil then
+    return "Not set"
   end
   if key == "api_key" and type(value) == "string" and value ~= "" then
     if #value <= 10 then
@@ -300,7 +352,7 @@ local function render_answer(chatgpt_viewer, is_dictionary, title_case_selection
     end
 end
 
-local function stream_answer(chatgpt_viewer, message_history, is_dictionary, title_case_selection, preface_with_selection, on_success, request_parameters)
+local function stream_answer(chatgpt_viewer, message_history, is_dictionary, title_case_selection, preface_with_selection, on_success, request_parameters, on_complete)
   local current_viewer = chatgpt_viewer
   local last_rendered_token_count = 0
   local last_rendered_dictionary_boundary = 0
@@ -345,6 +397,9 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
       if on_success then
         on_success(accumulated)
       end
+      if on_complete then
+        on_complete()
+      end
     end,
     on_error = function(err)
       if is_stream_transport_error(err) then
@@ -354,8 +409,14 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
         if on_success and answer and answer ~= "" and not tostring(answer):match("^Error querying AI:") then
           on_success(answer)
         end
+        if on_complete then
+          on_complete()
+        end
       else
         update_viewer("Error querying AI: " .. tostring(err))
+        if on_complete then
+          on_complete()
+        end
       end
     end,
   })
@@ -434,7 +495,16 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   local safeSelectionInContext = clean_up_string(selectionInContext, MAX_HL)
 
   local titleCaseSelection = capitalize_first(safeHighlightedText)
+  if dialog_title == "AI Dictionary" then
+    safeHighlightedText = trim_to_dictionary_limit(safeHighlightedText, 64)
+    titleCaseSelection = capitalize_first(safeHighlightedText)
+  end
   lastTitleCaseSelection = titleCaseSelection
+  local isDictionaryQuery = dialog_title == "AI Dictionary"
+  local ttsRequest = nil
+  if isDictionaryQuery and Device.isAndroid and Device:isAndroid() and Pronunciation.is_enabled() then
+    ttsRequest = self:createDictionaryTTSRequest(safeHighlightedText)
+  end
 
   local online = NetworkMgr:isOnline()
 
@@ -448,6 +518,9 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
     title = dialog_title,
     text = string.format(waitMessage),
     onAskQuestion = nil,
+    onPronunciation = ttsRequest and function()
+      self:playDictionaryPronunciation(ttsRequest)
+    end or nil,
     benedict = self
   }
 
@@ -471,7 +544,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   lastPrefaceWithSelection = preface_with_selection
   lastRequestParameters = request_parameters
   lastIsReport = false
-  lastIsDictionary = dialog_title == "AI Dictionary"
+  lastIsDictionary = isDictionaryQuery
 
   if not online then
     return
@@ -488,8 +561,97 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
       if lastIsDictionary and answer and answer ~= "" then
         save_lookup_entry(self.path, safeHighlightedText, safeSelectionInContext)
       end
-    end, request_parameters)
+    end, request_parameters, function()
+      if ttsRequest then
+        self:markDictionaryTextQueryFinished(ttsRequest)
+      end
+    end)
   end)
+end
+
+function AskGPT:createDictionaryTTSRequest(text)
+  return {
+    text = text,
+    plugin_dir = self.path or "AI_Dictionary.koplugin",
+    status = "idle",
+    audio_path = nil,
+    err = nil,
+    in_progress = false,
+    play_when_ready = false,
+    text_query_finished = false,
+  }
+end
+
+function AskGPT:markDictionaryTextQueryFinished(tts_request)
+  if not tts_request then
+    return
+  end
+
+  tts_request.text_query_finished = true
+  self:startDictionaryTTSRequest(tts_request, tts_request.play_when_ready)
+end
+
+function AskGPT:startDictionaryTTSRequest(tts_request, play_when_ready)
+  if not tts_request then
+    return
+  end
+
+  if play_when_ready then
+    tts_request.play_when_ready = true
+  end
+
+  if not tts_request.text_query_finished then
+    return
+  end
+
+  if tts_request.in_progress then
+    return
+  end
+
+  tts_request.status = "pending"
+  tts_request.in_progress = true
+
+  UIManager:scheduleIn(0.01, function()
+    local audio_path, err = Pronunciation.synthesize(tts_request.text, tts_request.plugin_dir)
+    tts_request.in_progress = false
+    if audio_path then
+      tts_request.status = "ready"
+      tts_request.audio_path = audio_path
+      tts_request.err = nil
+      if tts_request.play_when_ready then
+        tts_request.play_when_ready = false
+        AudioPlayer.play(audio_path, tts_request.plugin_dir)
+      end
+    else
+      tts_request.status = "failed"
+      tts_request.err = err
+      tts_request.play_when_ready = false
+      print("AI Dictionary TTS error: " .. tostring(err))
+    end
+  end)
+end
+
+function AskGPT:playDictionaryPronunciation(tts_request)
+  if not tts_request then
+    return
+  end
+
+  if tts_request.status == "ready" and tts_request.audio_path then
+    AudioPlayer.play(tts_request.audio_path, tts_request.plugin_dir)
+    return
+  end
+
+  if tts_request.in_progress or tts_request.status == "pending" then
+    tts_request.play_when_ready = true
+    return
+  end
+
+  if not tts_request.text_query_finished then
+    tts_request.play_when_ready = true
+    return
+  end
+
+  self:startDictionaryTTSRequest(tts_request, true)
 end
 
 function AskGPT:Regenerate(chatgpt_viewer)
@@ -720,6 +882,14 @@ function AskGPT:addConfigurationValue()
               show_message("Setting names must be Lua identifiers.")
               return
             end
+            if DEPRECATED_CONFIGURATION_KEYS[key] then
+              show_message("That setting is no longer used.")
+              return
+            end
+            if CORE_CONFIGURATION_KEY_SET[key] then
+              show_message("That setting is already available in settings.")
+              return
+            end
 
             local configuration = load_configuration()
             if configuration[key] ~= nil then
@@ -821,7 +991,7 @@ function AskGPT:getSettingsMenuItems()
 
   local custom_keys = {}
   for key, _ in pairs(configuration) do
-    if not written[key] then
+    if not written[key] and not DEPRECATED_CONFIGURATION_KEYS[key] then
       table.insert(custom_keys, key)
     end
   end
@@ -871,6 +1041,8 @@ function AskGPT:addToMainMenu(menu_items)
 end
 
 function AskGPT:init()
+  Pronunciation.cleanup_audio(self.path)
+
   if self.ui and self.ui.menu then
     self.ui.menu:registerToMainMenu(self)
   end
@@ -886,8 +1058,8 @@ function AskGPT:init()
             "I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
             "This is the context where it appears: '...{context}...'\n" ..
             "Use web search economically to identify or verify the book, character, place, term, reference, or allusion if that helps. " ..
-            "Explain it in the context/lore of the book, and help me understand it better (like Amazon Kindle's X-Ray, but much more concise). " ..
-            "No spoilers if it's fiction. Plain text. Keep your explanation concise and brief (under 90 words), and ask no questions at the end.",
+            "Explain it in the context/lore of the book, and help me understand it better (like Amazon Kindle's X-Ray, but more concise). " ..
+            "No spoilers if it's fiction. Plain text. Keep your explanation brief (under 150 words), and ask no questions at the end.",
             AI_EXPLAIN_WEB_SEARCH_PARAMETERS)
       end,
     }

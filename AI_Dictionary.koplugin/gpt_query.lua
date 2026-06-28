@@ -45,8 +45,8 @@ end
 local function queryChatGPT(message_history)
   local configuration = loadConfiguration()
   local api_key_value = configuration and configuration.api_key or api_key
-  local api_url = configuration and configuration.provider or "https://api.openai.com/v1/chat/completions"
-  local llm = configuration and configuration.model or "gpt-5-nano"
+  local api_url = configuration and (configuration.text_endpoint or configuration.provider) or "https://api.openai.com/v1/chat/completions"
+  local llm = configuration and (configuration.text_model or configuration.model) or "gpt-5-nano"
 
   local requestBodyTable = {
     model = llm,
