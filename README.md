@@ -40,7 +40,7 @@ voice_voice = "nova",
 6. You'll most probably want to disable the automatic launch of KOReader's default dictionary functionality on single-word selection. To do that, open KOReader's top menu (tap on the top part of the screen), go to `Settings` (the gear icon), select `Long-press on text` and disable `Dictionary on single word selection`.
 7. You are all set! Now simply select some word(s)/text, and use one of the options the plugins gives you ("AI Dictionary", "AI Explain", "AI English Simplify") to get answers.
 
-## Sample config.lua
+## Sample configuration.lua
 
 This is the configuration I personally use for the best results (don't forget to fill in your own API key):
 
