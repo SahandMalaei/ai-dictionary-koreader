@@ -4,10 +4,15 @@ local ltn12 = require("ltn12")
 local json = require("json")
 local lfs = require("libs/libkoreader-lfs")
 
+local api_key = nil
+local success, result = pcall(function() return require("api_key") end)
+if success then
+  api_key = result.key
+end
+
 local Pronunciation = {}
 
 local REQUEST_TIMEOUT_SECONDS = 45
-local DEFAULT_OPENAI_PROVIDER = "https://api.openai.com/v1/audio/speech"
 local DEFAULT_OPENROUTER_VOICE = "Ara"
 local DEFAULT_OPENAI_VOICE = "nova"
 local DEFAULT_INSTRUCTIONS = "Speak clearly and loudly in natural American English with a female voice. Use precise dictionary-style pronunciation."
@@ -81,15 +86,19 @@ local function has_value(value)
   return type(value) == "string" and value:match("%S") ~= nil
 end
 
+local function get_api_key(configuration)
+  return configuration and configuration.api_key or api_key
+end
+
 local function is_openai_url(url)
   return type(url) == "string" and url:lower():find("api.openai.com", 1, true) ~= nil
 end
 
-local function get_voice_provider(configuration)
-  if configuration and has_value(configuration.voice_provider) then
-    return configuration.voice_provider
+local function get_voice_endpoint(configuration)
+  if configuration and has_value(configuration.voice_endpoint) then
+    return configuration.voice_endpoint
   end
-  return DEFAULT_OPENAI_PROVIDER
+  return nil
 end
 
 local function get_default_voice(provider)
@@ -102,16 +111,20 @@ end
 function Pronunciation.is_enabled()
   local configuration = load_configuration()
   return configuration
-    and has_value(configuration.voice_api_key)
+    and has_value(get_api_key(configuration))
+    and has_value(configuration.voice_endpoint)
     and has_value(configuration.voice_model)
 end
 
 function Pronunciation.synthesize(text, plugin_dir)
   local configuration = load_configuration()
+  local api_key_value = get_api_key(configuration)
+  local voice_endpoint = get_voice_endpoint(configuration)
   if not (configuration
-      and has_value(configuration.voice_api_key)
+      and has_value(api_key_value)
+      and has_value(voice_endpoint)
       and has_value(configuration.voice_model)) then
-    return nil, "Voice TTS is disabled. Set voice_model and voice_api_key in configuration.lua."
+    return nil, "Voice TTS is disabled. Set api_key, voice_endpoint, and voice_model in configuration.lua."
   end
 
   if not text or text == "" then
@@ -121,8 +134,7 @@ function Pronunciation.synthesize(text, plugin_dir)
   plugin_dir = plugin_dir or "AI_Dictionary.koplugin"
 
   local response_format = DEFAULT_RESPONSE_FORMAT
-  local voice_provider = get_voice_provider(configuration)
-  local voice = has_value(configuration.voice_voice) and configuration.voice_voice or get_default_voice(voice_provider)
+  local voice = has_value(configuration.voice_voice) and configuration.voice_voice or get_default_voice(voice_endpoint)
   local request_body = json.encode({
     input = text,
     model = configuration.voice_model,
@@ -134,13 +146,13 @@ function Pronunciation.synthesize(text, plugin_dir)
 
   local response_body = {}
   local ok, code = https.request {
-    url = voice_provider,
+    url = voice_endpoint,
     method = "POST",
     headers = {
       ["Content-Type"] = "application/json",
       ["Content-Length"] = tostring(#request_body),
       ["Accept"] = "audio/mpeg",
-      ["Authorization"] = "Bearer " .. configuration.voice_api_key,
+      ["Authorization"] = "Bearer " .. api_key_value,
     },
     source = ltn12.source.string(request_body),
     sink = ltn12.sink.table(response_body),

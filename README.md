@@ -16,28 +16,27 @@ To use this plugin, You'll need to do a few things, which I've listed below.
 1. Get [KoReader](https://koreader.rocks/) installed on your e-reader/device.
 2. Download [the latest release of this plugin](https://github.com/SahandMalaei/ai-dictionary-koreader/releases/latest).
 3. The default AI provider is OpenAI's ChatGPT. Acquire an API key from [the OpenAI platform](https://platform.openai.com/). **Optional**: Alternatively, you can use any OpenAI-compatible AI provider of your own. I personally use [OpenRouter](https://openrouter.ai/api/v1/chat/completions) along with Google's Gemini 2.5 Flash for the best balance between speed and accuracy. You probably need to add some credits to your account, but from experience I can tell you that the personal use of this plugin is practically free (as long as you use fast and cheap models such as GPT5-Nano or Gemini 2.5 Flash). For reference, my own personal use over seven days costs me about 2 cents.
-4. Once you have your API key, rename `configuration.lua.sample` to `configuration.lua` and inside it, replace `YOUR_API_KEY` with your own API key. **Optional**: Alternatively, you can use any OpenAI-compatible endpoint and model by setting them in `configuration.lua`. As said earlier, I personally use [OpenRouter](https://openrouter.ai/api/v1/chat/completions) along with `google/gemini-2.5-flash` for the quick and accurate results. For this, you need to fill out the `provider` and `model` properties of `configuration.lua` with values of your own.
+4. Once you have your API key, rename `configuration.lua.sample` to `configuration.lua` and inside it, replace `YOUR_API_KEY` with your own API key. **Optional**: Alternatively, you can use any OpenAI-compatible endpoint and model by setting them in `configuration.lua`. As said earlier, I personally use [OpenRouter](https://openrouter.ai/api/v1/chat/completions) along with `google/gemini-2.5-flash` for the quick and accurate results. For this, you need to fill out the `text_endpoint` and `text_model` properties of `configuration.lua` with values of your own.
 
 ```lua
 local CONFIGURATION = {
     api_key = "YOUR_API_KEY",
-    provider = "https://api.openai.com/v1/chat/completions",
-    model = "gpt-5-nano"
+    text_endpoint = "https://api.openai.com/v1/chat/completions",
+    text_model = "gpt-5-nano"
 }
 
 return CONFIGURATION
 ```
 
-The AI Dictionary popup can also show a Pronounce button on Android when text-to-speech is configured. OpenAI TTS works by setting `voice_api_key`, `voice_provider`, `voice_model`, and optionally `voice_voice` in `configuration.lua`:
+The AI Dictionary popup can also show a Pronounce button on Android when text-to-speech is configured. TTS uses the same `api_key` as text completion. OpenAI TTS works by setting `voice_endpoint`, `voice_model`, and optionally `voice_voice` in `configuration.lua`:
 
 ```lua
-voice_api_key = "YOUR_OPENAI_API_KEY",
-voice_provider = "https://api.openai.com/v1/audio/speech",
+voice_endpoint = "https://api.openai.com/v1/audio/speech",
 voice_model = "gpt-4o-mini-tts",
 voice_voice = "nova",
 ```
 
-OpenRouter TTS is still supported with `voice_provider = "https://openrouter.ai/api/v1/audio/speech"`, `voice_model = "x-ai/grok-voice-tts-1.0"`, and a compatible voice such as `"Ara"`.
+OpenRouter TTS is still supported with `voice_endpoint = "https://openrouter.ai/api/v1/audio/speech"`, `voice_model = "x-ai/grok-voice-tts-1.0"`, and a compatible voice such as `"Ara"`.
 
 5. Copy the folder named `AI_Dictionary.koplugin` into the `koreader/plugins` directory on your device.
 6. You'll most probably want to disable the automatic launch of KOReader's default dictionary functionality on single-word selection. To do that, open KOReader's top menu (tap on the top part of the screen), go to `Settings` (the gear icon), select `Long-press on text` and disable `Dictionary on single word selection`.

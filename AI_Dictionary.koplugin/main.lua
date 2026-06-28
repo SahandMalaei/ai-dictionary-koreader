@@ -40,19 +40,34 @@ local DICTIONARY_SECTION_LABELS = { "Definition", "Example", "Synonyms", "Paraph
 local OFFLINE_WAIT_MESSAGE = "You are offline. AI lookup requires an active internet connection."
 local ONLINE_WAIT_MESSAGE = "Getting the answer..."
 
-local CORE_CONFIGURATION_KEYS = { "api_key", "provider", "model" }
+local CORE_CONFIGURATION_KEYS = {
+  "api_key",
+  "text_endpoint",
+  "text_model",
+  "voice_endpoint",
+  "voice_model",
+  "voice_voice",
+}
 local CORE_CONFIGURATION_KEY_SET = {
   api_key = true,
+  text_endpoint = true,
+  text_model = true,
+  voice_endpoint = true,
+  voice_model = true,
+  voice_voice = true,
+}
+local DEPRECATED_CONFIGURATION_KEYS = {
   provider = true,
   model = true,
+  voice_api_key = true,
+  voice_provider = true,
 }
 local CONFIGURATION_LABELS = {
   api_key = "API key",
-  provider = "Provider URL",
-  model = "Model",
+  text_endpoint = "Text endpoint URL",
+  text_model = "Text model",
   additional_parameters = "Additional parameters",
-  voice_api_key = "Voice API key",
-  voice_provider = "Voice provider URL",
+  voice_endpoint = "Voice endpoint URL",
   voice_model = "Voice model",
   voice_voice = "Voice",
   tts_speed = "Voice speed",
@@ -126,17 +141,27 @@ local function get_configuration_path(plugin)
   return "AI_Dictionary.koplugin/configuration.lua"
 end
 
+local function normalize_configuration(configuration)
+  if configuration.text_endpoint == nil then
+    configuration.text_endpoint = configuration.provider
+  end
+  if configuration.text_model == nil then
+    configuration.text_model = configuration.model
+  end
+  return configuration
+end
+
 local function load_configuration()
   package.loaded["configuration"] = nil
   local ok, config = pcall(function() return require("configuration") end)
   if ok and type(config) == "table" then
-    return config
+    return normalize_configuration(config)
   end
-  return {
+  return normalize_configuration({
     api_key = "",
-    provider = "https://api.openai.com/v1/chat/completions",
-    model = "gpt-5-nano",
-  }
+    text_endpoint = "https://api.openai.com/v1/chat/completions",
+    text_model = "gpt-5-nano",
+  })
 end
 
 local function is_array(value)
@@ -224,7 +249,7 @@ local function serialize_configuration(configuration)
 
   local keys = {}
   for key, _ in pairs(configuration) do
-    if not written[key] then
+    if not written[key] and not DEPRECATED_CONFIGURATION_KEYS[key] then
       table.insert(keys, key)
     end
   end
@@ -257,9 +282,12 @@ end
 
 local function display_configuration_value(key, value)
   if value == nil then
-    return "not set"
+    return "Not set"
   end
-  if (key == "api_key" or key == "voice_api_key") and type(value) == "string" and value ~= "" then
+  if type(value) == "string" and value:match("%S") == nil then
+    return "Not set"
+  end
+  if key == "api_key" and type(value) == "string" and value ~= "" then
     if #value <= 10 then
       return "set"
     end
@@ -854,6 +882,14 @@ function AskGPT:addConfigurationValue()
               show_message("Setting names must be Lua identifiers.")
               return
             end
+            if DEPRECATED_CONFIGURATION_KEYS[key] then
+              show_message("That setting is no longer used.")
+              return
+            end
+            if CORE_CONFIGURATION_KEY_SET[key] then
+              show_message("That setting is already available in settings.")
+              return
+            end
 
             local configuration = load_configuration()
             if configuration[key] ~= nil then
@@ -955,7 +991,7 @@ function AskGPT:getSettingsMenuItems()
 
   local custom_keys = {}
   for key, _ in pairs(configuration) do
-    if not written[key] then
+    if not written[key] and not DEPRECATED_CONFIGURATION_KEYS[key] then
       table.insert(custom_keys, key)
     end
   end
