@@ -28,7 +28,7 @@ local CONFIGURATION = {
 return CONFIGURATION
 ```
 
-The AI Dictionary popup can also show a Pronounce button on Android when text-to-speech is configured. TTS uses the same `api_key` as text completion. OpenAI TTS works by setting `voice_endpoint`, `voice_model`, and optionally `voice_voice` in `configuration.lua`:
+**Android-Only:** The AI Dictionary popup can also show a Pronounce button on Android when AI voice output is configured. It uses the same `api_key` as text completion. You can use it by setting `voice_endpoint`, `voice_model`, and optionally `voice_voice` in `configuration.lua`:
 
 ```lua
 voice_endpoint = "https://api.openai.com/v1/audio/speech",
@@ -36,11 +36,28 @@ voice_model = "gpt-4o-mini-tts",
 voice_voice = "nova",
 ```
 
-OpenRouter TTS is still supported with `voice_endpoint = "https://openrouter.ai/api/v1/audio/speech"`, `voice_model = "x-ai/grok-voice-tts-1.0"`, and a compatible voice such as `"Ara"`.
-
 5. Copy the folder named `AI_Dictionary.koplugin` into the `koreader/plugins` directory on your device.
 6. You'll most probably want to disable the automatic launch of KOReader's default dictionary functionality on single-word selection. To do that, open KOReader's top menu (tap on the top part of the screen), go to `Settings` (the gear icon), select `Long-press on text` and disable `Dictionary on single word selection`.
 7. You are all set! Now simply select some word(s)/text, and use one of the options the plugins gives you ("AI Dictionary", "AI Explain", "AI English Simplify") to get answers.
+
+## Sample config.lua
+
+This is the configuration I personally use for the best results (don't forget to fill in your own API key):
+
+```lua
+local CONFIGURATION = {
+    api_key = "[YOUR_API_KEY]",
+
+    text_endpoint = "https://openrouter.ai/api/v1/chat/completions",
+    text_model = "google/gemini-2.5-flash",
+
+    voice_endpoint = "https://openrouter.ai/api/v1/audio/speech",
+    voice_model = "x-ai/grok-voice-tts-1.0",
+    voice_voice = "Ara"
+}
+
+return CONFIGURATION
+```
 
 ## What's Next?
 
