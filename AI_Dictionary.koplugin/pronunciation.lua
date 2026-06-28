@@ -15,7 +15,7 @@ local Pronunciation = {}
 local REQUEST_TIMEOUT_SECONDS = 45
 local DEFAULT_OPENROUTER_VOICE = "Ara"
 local DEFAULT_OPENAI_VOICE = "nova"
-local DEFAULT_INSTRUCTIONS = "Speak clearly and loudly in natural American English with a female voice. Use precise dictionary-style pronunciation."
+local DEFAULT_INSTRUCTIONS = "Speak clearly and loudly in natural American English with a female voice. Use precise dictionary-style pronunciation. Use the provided context only to choose the correct pronunciation, such as tense or part of speech. Speak only the selected text."
 local DEFAULT_RESPONSE_FORMAT = "mp3"
 
 https.TIMEOUT = REQUEST_TIMEOUT_SECONDS
@@ -144,7 +144,7 @@ function Pronunciation.is_enabled()
     and has_value(configuration.voice_model)
 end
 
-function Pronunciation.synthesize(text, plugin_dir)
+function Pronunciation.synthesize(text, plugin_dir, context)
   local configuration = load_configuration()
   local api_key_value = get_api_key(configuration)
   local voice_endpoint = get_voice_endpoint(configuration)
@@ -163,11 +163,15 @@ function Pronunciation.synthesize(text, plugin_dir)
 
   local response_format = DEFAULT_RESPONSE_FORMAT
   local voice = has_value(configuration.voice_voice) and configuration.voice_voice or get_default_voice(voice_endpoint)
+  local instructions = DEFAULT_INSTRUCTIONS
+  if has_value(context) then
+    instructions = instructions .. "\n\nContext where the selected text appears, for pronunciation disambiguation only:\n" .. context
+  end
   local request_body = json.encode({
     input = text,
     model = configuration.voice_model,
     voice = voice,
-    instructions = DEFAULT_INSTRUCTIONS,
+    instructions = instructions,
     response_format = response_format,
     speed = (configuration and configuration.tts_speed) or 1,
   })

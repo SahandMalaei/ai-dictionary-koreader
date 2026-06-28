@@ -542,7 +542,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   local isDictionaryQuery = dialog_title == "AI Dictionary"
   local ttsRequest = nil
   if isDictionaryQuery and Device.isAndroid and Device:isAndroid() and Pronunciation.is_enabled() then
-    ttsRequest = self:createDictionaryTTSRequest(safeHighlightedText)
+    ttsRequest = self:createDictionaryTTSRequest(safeHighlightedText, safeSelectionInContext)
   end
 
   local online = NetworkMgr:isOnline()
@@ -608,9 +608,10 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   end)
 end
 
-function AskGPT:createDictionaryTTSRequest(text)
+function AskGPT:createDictionaryTTSRequest(text, context)
   return {
     text = text,
+    context = context,
     plugin_dir = self.path or "AI_Dictionary.koplugin",
     status = "idle",
     audio_path = nil,
@@ -651,7 +652,7 @@ function AskGPT:startDictionaryTTSRequest(tts_request, play_when_ready)
   tts_request.in_progress = true
 
   UIManager:scheduleIn(0.01, function()
-    local audio_path, err = Pronunciation.synthesize(tts_request.text, tts_request.plugin_dir)
+    local audio_path, err = Pronunciation.synthesize(tts_request.text, tts_request.plugin_dir, tts_request.context)
     tts_request.in_progress = false
     if audio_path then
       tts_request.status = "ready"
