@@ -47,6 +47,7 @@ local CORE_CONFIGURATION_KEYS = {
   "voice_endpoint",
   "voice_model",
   "voice_voice",
+  "debug_mode",
 }
 local CORE_CONFIGURATION_KEY_SET = {
   api_key = true,
@@ -55,6 +56,10 @@ local CORE_CONFIGURATION_KEY_SET = {
   voice_endpoint = true,
   voice_model = true,
   voice_voice = true,
+  debug_mode = true,
+}
+local BOOLEAN_CONFIGURATION_KEYS = {
+  debug_mode = true,
 }
 local DEPRECATED_CONFIGURATION_KEYS = {
   provider = true,
@@ -71,6 +76,7 @@ local CONFIGURATION_LABELS = {
   voice_model = "Voice model",
   voice_voice = "Voice",
   tts_speed = "Voice speed",
+  debug_mode = "Debug mode",
 }
 
 local AI_EXPLAIN_WEB_SEARCH_PARAMETERS = {
@@ -180,6 +186,11 @@ local function load_configuration()
     text_endpoint = "https://api.openai.com/v1/chat/completions",
     text_model = "gpt-5-nano",
   })
+end
+
+local function is_debug_mode_enabled()
+  local configuration = load_configuration()
+  return configuration and configuration.debug_mode == true
 end
 
 local function is_array(value)
@@ -359,18 +370,26 @@ local function find_dictionary_section_boundary(text, after_index)
   return latest_start
 end
 
-local function render_answer(chatgpt_viewer, is_dictionary, title_case_selection, preface_with_selection, answer)
+local function append_debug_prompt(answer, prompt)
+  if type(prompt) ~= "string" or prompt == "" then
+    return answer
+  end
+  return tostring(answer or "") .. "\n\nDebug: prompt sent to AI\n\n" .. prompt
+end
+
+local function render_answer(chatgpt_viewer, is_dictionary, title_case_selection, preface_with_selection, answer, debug_prompt)
+    local display_answer = append_debug_prompt(answer, debug_prompt)
     if is_dictionary then
-      local header_text, body_text = format_dictionary_output(title_case_selection, answer)
+      local header_text, body_text = format_dictionary_output(title_case_selection, display_answer)
       return chatgpt_viewer:update(body_text, header_text)
     elseif preface_with_selection then
-      return chatgpt_viewer:update(string.format("%s %s", title_case_selection, answer))
+      return chatgpt_viewer:update(string.format("%s %s", title_case_selection, display_answer))
     else
-      return chatgpt_viewer:update(string.format("%s %s", "", answer))
+      return chatgpt_viewer:update(string.format("%s %s", "", display_answer))
     end
 end
 
-local function stream_answer(chatgpt_viewer, message_history, is_dictionary, title_case_selection, preface_with_selection, on_success, request_parameters, on_complete)
+local function stream_answer(chatgpt_viewer, message_history, is_dictionary, title_case_selection, preface_with_selection, on_success, request_parameters, on_complete, debug_prompt)
   local current_viewer = chatgpt_viewer
   local last_rendered_token_count = 0
   local last_rendered_dictionary_boundary = 0
@@ -381,14 +400,15 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
     return tostring(err):match("^wantread") ~= nil or tostring(err):match("^timeout") ~= nil
   end
 
-  local function update_viewer(answer)
+  local function update_viewer(answer, final_debug_prompt)
     last_rendered_answer = answer
     current_viewer = render_answer(
       current_viewer,
       is_dictionary,
       title_case_selection,
       preface_with_selection,
-      answer
+      answer,
+      final_debug_prompt
     )
     current_viewer.stream_cancel = cancel_stream
     repaint_now()
@@ -401,7 +421,8 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
         local boundary = find_dictionary_section_boundary(accumulated, last_rendered_dictionary_boundary)
         if boundary then
           last_rendered_dictionary_boundary = boundary
-          update_viewer(accumulated:sub(1, boundary - 1):gsub("%s+$", ""))
+          local partial_answer = accumulated:sub(1, boundary - 1):gsub("%s+$", "")
+          update_viewer(partial_answer)
         end
       elseif token_count - last_rendered_token_count >= STREAM_UPDATE_TOKEN_INTERVAL then
         last_rendered_token_count = token_count
@@ -409,8 +430,8 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
       end
     end,
     on_done = function(accumulated)
-      if accumulated ~= last_rendered_answer then
-        update_viewer(accumulated)
+      if accumulated ~= last_rendered_answer or debug_prompt then
+        update_viewer(accumulated, debug_prompt)
       end
       if on_success then
         on_success(accumulated)
@@ -423,7 +444,7 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
       if is_stream_transport_error(err) then
         update_viewer("Streaming stalled; retrying without streaming...")
         local answer = queryChatGPT(message_history)
-        update_viewer(answer)
+        update_viewer(answer, debug_prompt)
         if on_success and answer and answer ~= "" and not tostring(answer):match("^Error querying AI:") then
           on_success(answer)
         end
@@ -583,7 +604,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
       if ttsRequest then
         self:markDictionaryTextQueryFinished(ttsRequest)
       end
-    end)
+    end, is_debug_mode_enabled() and lastQuery or nil)
   end)
 end
 
@@ -698,7 +719,7 @@ function AskGPT:Regenerate(chatgpt_viewer)
       local report = queryChatGPT(message_history)
       updatedViewer:update(report, nil, { scroll_to_bottom = false })
     else
-      stream_answer(updatedViewer, message_history, lastIsDictionary, lastTitleCaseSelection, lastPrefaceWithSelection, nil, lastRequestParameters)
+      stream_answer(updatedViewer, message_history, lastIsDictionary, lastTitleCaseSelection, lastPrefaceWithSelection, nil, lastRequestParameters, nil, is_debug_mode_enabled() and lastQuery or nil)
     end
   end)
 end
@@ -983,7 +1004,7 @@ function AskGPT:getSettingsMenuItems()
     local label = CONFIGURATION_LABELS[key] or tostring(key)
     written[key] = true
 
-    if type(value) == "boolean" then
+    if type(value) == "boolean" or BOOLEAN_CONFIGURATION_KEYS[key] then
       table.insert(items, {
         text = label,
         checked_func = function() return load_configuration()[key] == true end,

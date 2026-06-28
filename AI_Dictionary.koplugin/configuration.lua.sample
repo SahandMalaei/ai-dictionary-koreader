@@ -7,6 +7,8 @@ local CONFIGURATION = {
     voice_endpoint = "https://api.openai.com/v1/audio/speech",
     voice_model = "gpt-4o-mini-tts",
     voice_voice = "nova",
+
+    debug_mode = false,
 }
 
 return CONFIGURATION
