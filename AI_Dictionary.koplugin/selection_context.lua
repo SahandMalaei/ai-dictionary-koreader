@@ -3,6 +3,7 @@ local Screen = Device.screen
 
 local function selection_to_text(sel)
   if type(sel) == "string" then return sel end
+  if sel == nil then return "" end
   if type(sel) ~= "table" then return tostring(sel) end
 
   -- Some backends give { text="...", ... }
@@ -33,16 +34,50 @@ local function selection_to_text(sel)
   return table.concat(out, "")
 end
 
+local function is_pdf_document(document)
+  if not document then
+    return false
+  end
+  if document.is_pdf then
+    return true
+  end
+  if type(document.file) == "string" then
+    return document.file:lower():match("%.pdf$") ~= nil
+  end
+  return false
+end
+
 local function get_page_text(document)
-  return selection_to_text(document:getTextFromPositions({x = 0, y = 0},
-    {x = Screen:getWidth(), y = Screen:getHeight()}, true))
+  -- PdfDocument:getTextFromPositions goes through the PDF/kopt backend, which can
+  -- be fragile on older Kindle builds. The selected text is already available to
+  -- callers, so skip surrounding-context extraction for PDFs instead of risking a
+  -- crash while preparing an AI request.
+  if not document or not document.getTextFromPositions or is_pdf_document(document) then
+    return ""
+  end
+
+  local ok, result = pcall(function()
+    return document:getTextFromPositions(
+      {x = 0, y = 0},
+      {x = Screen:getWidth(), y = Screen:getHeight()},
+      true
+    )
+  end)
+  if not ok then
+    return ""
+  end
+
+  return selection_to_text(result)
 end
 
 function get_selection_in_context2(document, selection, window)
     window = window or 5 -- number of words before/after
     local page_text = get_page_text(document)
-    if not page_text or not selection or selection == "" then
+    if not selection or selection == "" then
         return ""
+    end
+    if not page_text or page_text == "" then
+        return '"' .. selection .. '"'
     end
 
     -- escape any magic characters from selection for pattern search
@@ -84,11 +119,21 @@ function get_selection_in_context2(document, selection, window)
     return context
 end
 
-function get_selection_in_context(document, selection, window)
+local function fallback_context(selection)
+    if not selection or selection == "" then
+        return ""
+    end
+    return '"' .. selection .. '"'
+end
+
+local function get_selection_in_context_unsafe(document, selection, window)
     window = window or 10
     local page_text = get_page_text(document)
-    if not page_text or not selection or selection == "" then
+    if not selection or selection == "" then
         return ""
+    end
+    if not page_text or page_text == "" then
+        return fallback_context(selection)
     end
 
     -- Escape Lua pattern chars in selection
@@ -102,7 +147,7 @@ function get_selection_in_context(document, selection, window)
     local s_pos, e_pos = page_text:find(safe)
     if not s_pos then
         -- Fallback if not found
-        return '"' .. selection .. '"'
+        return fallback_context(selection)
     end
 
     local before_text = page_text:sub(1, s_pos - 1)
@@ -130,6 +175,16 @@ function get_selection_in_context(document, selection, window)
     local right = (after  ~= "" and ("" .. after)  or "")
 
     return left .. ' {{{ ' .. selection .. ' }}} ' .. right
+end
+
+local function get_selection_in_context(document, selection, window)
+    local ok, context = pcall(function()
+        return get_selection_in_context_unsafe(document, selection, window)
+    end)
+    if ok and context and context ~= "" then
+        return context
+    end
+    return fallback_context(selection)
 end
 
 return get_selection_in_context
