@@ -39,7 +39,7 @@ local Screen = Device.screen
 
 -- Change this value to adjust the bottom panel height later.
 -- 0.5 means half the screen, 0.6 means 60%, and so on.
-local DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION = 0.6
+local DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION = 0.55
 
 -- Change this value to adjust the bottom panel's top button row height later.
 -- 0.75 means 75% of the normal KOReader ButtonTable text/content height.
@@ -71,7 +71,7 @@ local ChatGPTViewer = InputContainer:extend {
   title_face = nil,               -- use default from TitleBar
   title_multilines = nil,         -- see TitleBar for details
   title_shrink_font_to_fit = nil, -- see TitleBar for details
-  text_face = Font:getFace("xx_smallinfofont"),
+  text_face = Font:getFace("xx_smallinfofont", 17),
   header_text = nil,
   header_face = nil,
   header_spacing = Size.padding.small,
