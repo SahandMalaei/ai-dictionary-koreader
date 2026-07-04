@@ -4,8 +4,6 @@ local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
 local _ = require("gettext")
 
-local queryChatGPT = require("gpt_query")
-
 local CONFIGURATION = nil
 local buttons, input_dialog
 
@@ -14,21 +12,6 @@ if success then
   CONFIGURATION = result
 else
   print("configuration.lua not found, skipping...")
-end
-
-local function translateText(text, target_language)
-  local translation_message = {
-    role = "user",
-    content = "Translate the following text to " .. target_language .. ": " .. text
-  }
-  local translation_history = {
-    {
-      role = "system",
-      content = "You are a helpful translation assistant. Provide direct translations without additional commentary."
-    },
-    translation_message
-  }
-  return queryChatGPT(translation_history)
 end
 
 local function createResultText(highlightedText, message_history)

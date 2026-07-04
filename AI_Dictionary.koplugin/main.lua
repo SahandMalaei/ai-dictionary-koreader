@@ -12,8 +12,7 @@ local UIManager = require("ui/uimanager")
 local ChatGPTViewer = require("chatgptviewer")
 local handleNewQuestion = require("dialogs")
 
-local queryChatGPT = require("gpt_query")
-local queryStream = require("gpt_query_stream")
+local queryAI = require("ai_query")
 local LookupsReport = require("lookups_report")
 local Updater = require("updater")
 local AudioPlayer = require("audio_player")
@@ -398,10 +397,6 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
   local last_rendered_answer = nil
   local cancel_stream
 
-  local function is_stream_transport_error(err)
-    return tostring(err):match("^wantread") ~= nil or tostring(err):match("^timeout") ~= nil
-  end
-
   local function update_viewer(answer, final_debug_prompt)
     last_rendered_answer = answer
     current_viewer = render_answer(
@@ -416,7 +411,7 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
     repaint_now()
   end
 
-  cancel_stream = queryStream(message_history, {
+  cancel_stream = queryAI(message_history, {
     request_parameters = request_parameters,
     on_delta = function(_, accumulated, token_count)
       if is_dictionary then
@@ -443,21 +438,48 @@ local function stream_answer(chatgpt_viewer, message_history, is_dictionary, tit
       end
     end,
     on_error = function(err)
-      if is_stream_transport_error(err) then
-        update_viewer("Streaming stalled; retrying without streaming...")
-        local answer = queryChatGPT(message_history)
-        update_viewer(answer, debug_prompt)
-        if on_success and answer and answer ~= "" and not tostring(answer):match("^Error querying AI:") then
-          on_success(answer)
-        end
-        if on_complete then
-          on_complete()
-        end
-      else
-        update_viewer("Error querying AI: " .. tostring(err))
-        if on_complete then
-          on_complete()
-        end
+      update_viewer("Error querying AI: " .. tostring(err))
+      if on_complete then
+        on_complete()
+      end
+    end,
+  })
+
+  current_viewer.stream_cancel = cancel_stream
+end
+
+local function stream_plain_answer(chatgpt_viewer, message_history, on_complete)
+  local current_viewer = chatgpt_viewer
+  local last_rendered_token_count = 0
+  local last_rendered_answer = nil
+  local cancel_stream
+
+  local function update_viewer(answer)
+    last_rendered_answer = answer
+    current_viewer = current_viewer:update(answer, nil, { scroll_to_bottom = false })
+    current_viewer.stream_cancel = cancel_stream
+    repaint_now()
+  end
+
+  cancel_stream = queryAI(message_history, {
+    on_delta = function(_, accumulated, token_count)
+      if token_count - last_rendered_token_count >= STREAM_UPDATE_TOKEN_INTERVAL then
+        last_rendered_token_count = token_count
+        update_viewer(accumulated)
+      end
+    end,
+    on_done = function(accumulated)
+      if accumulated ~= last_rendered_answer then
+        update_viewer(accumulated)
+      end
+      if on_complete then
+        on_complete()
+      end
+    end,
+    on_error = function(err)
+      update_viewer("Error querying AI: " .. tostring(err))
+      if on_complete then
+        on_complete()
       end
     end,
   })
@@ -719,8 +741,7 @@ function AskGPT:Regenerate(chatgpt_viewer)
     }}
 
     if lastIsReport then
-      local report = queryChatGPT(message_history)
-      updatedViewer:update(report, nil, { scroll_to_bottom = false })
+      stream_plain_answer(updatedViewer, message_history)
     else
       stream_answer(updatedViewer, message_history, lastIsDictionary, lastTitleCaseSelection, lastPrefaceWithSelection, nil, lastRequestParameters, nil, is_debug_mode_enabled() and lastQuery or nil)
     end
@@ -815,8 +836,7 @@ function AskGPT:generateLookupsReport(timeframe)
       },
     }
 
-    local report = queryChatGPT(message_history)
-    report_viewer:update(report, nil, { scroll_to_bottom = false })
+    stream_plain_answer(report_viewer, message_history)
   end)
 end
 

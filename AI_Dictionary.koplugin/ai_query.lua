@@ -134,7 +134,7 @@ local function buildRequestBody(message_history, configuration, request_paramete
   return api_url, json.encode(requestBodyTable)
 end
 
-local function queryChatGPTStream(message_history, opts)
+local function queryAI(message_history, opts)
   opts = opts or {}
 
   local configuration = loadConfiguration()
@@ -150,11 +150,9 @@ local function queryChatGPTStream(message_history, opts)
   local token_count = 0
   local response_buffer = ""
   local cancelled = false
-  local done = false
 
   local function handlePayload(payload)
     if payload == "[DONE]" then
-      done = true
       return
     end
 
@@ -188,7 +186,7 @@ local function queryChatGPTStream(message_history, opts)
   end
 
   local requestClient = getRequestClient(api_url)
-  local ok, code = requestClient {
+  local _, code = requestClient {
     url = api_url,
     method = "POST",
     headers = buildHeaders(requestBody, api_key_value),
@@ -217,4 +215,4 @@ local function queryChatGPTStream(message_history, opts)
   end
 end
 
-return queryChatGPTStream
+return queryAI
