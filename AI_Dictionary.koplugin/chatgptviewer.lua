@@ -182,15 +182,7 @@ function ChatGPTViewer:init()
     }
   end
 
-  local top_separator = nil
   local top_separator_height = 0
-  if self.bottom_sheet then
-    top_separator_height = (Size.line and Size.line.thick) or Screen:scaleBySize(2)
-    top_separator = LineWidget:new {
-      dimen = Geom:new { w = self.width, h = top_separator_height },
-      background = Blitbuffer.COLOR_DARK_GRAY,
-    }
-  end
   local button_separator = nil
   local button_separator_height = 0
   if self.bottom_sheet then
@@ -401,9 +393,6 @@ function ChatGPTViewer:init()
   }
 
   local frame_widgets = {}
-  if top_separator then
-    table.insert(frame_widgets, top_separator)
-  end
   if self.bottom_sheet then
     table.insert(frame_widgets, CenterContainer:new {
       dimen = Geom:new {
@@ -435,9 +424,11 @@ function ChatGPTViewer:init()
 
   self.frame = FrameContainer:new {
     radius = self.bottom_sheet and 0 or Size.radius.window,
+    bordersize = self.bottom_sheet and scale_size(Size.line.medium, 3, 1) or nil,
     padding = 0,
     margin = 0,
     background = Blitbuffer.COLOR_WHITE,
+    color = self.bottom_sheet and Blitbuffer.COLOR_DARK_GRAY or nil,
     VerticalGroup:new(frame_widgets)
   }
   if self.bottom_sheet then
