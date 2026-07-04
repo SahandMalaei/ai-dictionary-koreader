@@ -178,18 +178,32 @@ function ChatGPTViewer:init()
       background = Blitbuffer.COLOR_DARK_GRAY,
     }
   end
+  local button_separator = nil
+  local button_separator_height = 0
+  if self.bottom_sheet then
+    button_separator_height = (Size.line and Size.line.thin) or 1
+    button_separator = LineWidget:new {
+      dimen = Geom:new { w = self.width, h = button_separator_height },
+      background = Blitbuffer.COLOR_GRAY,
+    }
+  end
 
-  local titlebar = TitleBar:new {
-    width = self.width,
-    align = "left",
-    with_bottom_line = true,
-    title = self.title,
-    title_face = self.title_face,
-    title_multilines = self.title_multilines,
-    title_shrink_font_to_fit = self.title_shrink_font_to_fit,
-    close_callback = function() self:onClose() end,
-    show_parent = self,
-  }
+  local titlebar = nil
+  local titlebar_height = 0
+  if not self.bottom_sheet then
+    titlebar = TitleBar:new {
+      width = self.width,
+      align = "left",
+      with_bottom_line = true,
+      title = self.title,
+      title_face = self.title_face,
+      title_multilines = self.title_multilines,
+      title_shrink_font_to_fit = self.title_shrink_font_to_fit,
+      close_callback = function() self:onClose() end,
+      show_parent = self,
+    }
+    titlebar_height = titlebar:getHeight()
+  end
 
   -- Callback to enable/disable buttons, for at-top/at-bottom feedback
   local prev_at_top = false -- Buttons were created enabled
@@ -260,12 +274,17 @@ function ChatGPTViewer:init()
     show_parent = self,
   }
 
-  local textw_height = self.height - top_separator_height - titlebar:getHeight() - self.button_table:getSize().h
+  local textw_height = self.height - top_separator_height - button_separator_height - titlebar_height - self.button_table:getSize().h
   if textw_height < 1 then
     textw_height = 1
   end
-  local inner_width = self.width - 2 * self.text_padding - 2 * self.text_margin
-  local inner_height = textw_height - 2 * self.text_padding - 2 * self.text_margin
+  local text_padding_h = self.text_padding
+  local text_padding_v = self.text_padding
+  if self.bottom_sheet then
+    text_padding_h = math.floor(self.text_padding * 1.5 + 0.5)
+  end
+  local inner_width = self.width - 2 * text_padding_h - 2 * self.text_margin
+  local inner_height = textw_height - 2 * text_padding_v - 2 * self.text_margin
   if inner_height < 1 then
     inner_height = 1
   end
@@ -327,7 +346,10 @@ function ChatGPTViewer:init()
   end
 
   self.textw = FrameContainer:new {
-    padding = self.text_padding,
+    padding_left = text_padding_h,
+    padding_right = text_padding_h,
+    padding_top = text_padding_v,
+    padding_bottom = text_padding_v,
     margin = self.text_margin,
     bordersize = 0,
     text_group,
@@ -337,7 +359,18 @@ function ChatGPTViewer:init()
   if top_separator then
     table.insert(frame_widgets, top_separator)
   end
-  table.insert(frame_widgets, titlebar)
+  if self.bottom_sheet then
+    table.insert(frame_widgets, CenterContainer:new {
+      dimen = Geom:new {
+        w = self.width,
+        h = self.button_table:getSize().h,
+      },
+      self.button_table,
+    })
+    table.insert(frame_widgets, button_separator)
+  else
+    table.insert(frame_widgets, titlebar)
+  end
   table.insert(frame_widgets, CenterContainer:new {
     dimen = Geom:new {
       w = self.width,
@@ -345,13 +378,15 @@ function ChatGPTViewer:init()
     },
     self.textw,
   })
-  table.insert(frame_widgets, CenterContainer:new {
-    dimen = Geom:new {
-      w = self.width,
-      h = self.button_table:getSize().h,
-    },
-    self.button_table,
-  })
+  if not self.bottom_sheet then
+    table.insert(frame_widgets, CenterContainer:new {
+      dimen = Geom:new {
+        w = self.width,
+        h = self.button_table:getSize().h,
+      },
+      self.button_table,
+    })
+  end
 
   self.frame = FrameContainer:new {
     radius = self.bottom_sheet and 0 or Size.radius.window,
