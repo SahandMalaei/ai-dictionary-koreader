@@ -79,6 +79,7 @@ local ChatGPTViewer = InputContainer:extend {
   text_padding = Size.padding.large,
   text_margin = Size.margin.small,
   button_padding = Size.padding.default,
+  default_button_fgcolor = Blitbuffer.Color8(0x22),
   -- Bottom row with Close, Find buttons. Also added when no caller's buttons defined.
   add_default_buttons = nil,
   default_hold_callback = nil,   -- on each default button
@@ -278,7 +279,9 @@ function ChatGPTViewer:init()
     end
   end
   local buttons = self.buttons_table or {}
+  local default_buttons_row_index = nil
   if self.add_default_buttons or not self.buttons_table then
+    default_buttons_row_index = #buttons + 1
     table.insert(buttons, default_buttons)
   end
   local button_table_width = self.width - 2 * self.button_padding
@@ -309,6 +312,19 @@ function ChatGPTViewer:init()
     self.button_table = button_table
   else
     self.button_table = make_button_table()
+  end
+  if default_buttons_row_index and self.default_button_fgcolor then
+    local default_buttons_row = self.button_table.buttons_layout and self.button_table.buttons_layout[default_buttons_row_index]
+    if default_buttons_row then
+      for _, button in ipairs(default_buttons_row) do
+        if button.text and button.label_widget then
+          button.label_widget.fgcolor = self.default_button_fgcolor
+          if button.label_widget.update then
+            button.label_widget:update()
+          end
+        end
+      end
+    end
   end
 
   local textw_height = self.height - top_separator_height - button_separator_height - titlebar_height - self.button_table:getSize().h
