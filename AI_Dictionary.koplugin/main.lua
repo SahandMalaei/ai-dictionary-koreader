@@ -532,7 +532,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   local safeChapter = clean_up_string(chapterClause, MAX_TITLE)
   local safeHighlightedText = clean_up_string(highlightedText, MAX_HL)
 
-  local selectionInContext = get_selection_in_context(self.ui.document, highlightedText, 10)
+  local selectionInContext = get_selection_in_context(_reader_highlight_instance, highlightedText, 10)
   local safeSelectionInContext = clean_up_string(selectionInContext, MAX_HL)
 
   local titleCaseSelection = capitalize_first(safeHighlightedText)
