@@ -34,14 +34,6 @@ local function isOpenRouterUrl(url)
   return type(url) == "string" and url:lower():find("openrouter.ai", 1, true) ~= nil
 end
 
-local function isOpenAIUrl(url)
-  return type(url) == "string" and url:lower():find("api.openai.com", 1, true) ~= nil
-end
-
-local function isGpt5Model(model)
-  return type(model) == "string" and model:lower():match("^gpt%-5") ~= nil
-end
-
 local function queryChatGPT(message_history)
   local configuration = loadConfiguration()
   local api_key_value = configuration and configuration.api_key or api_key
@@ -50,8 +42,6 @@ local function queryChatGPT(message_history)
 
   local requestBodyTable = {
     model = llm,
-    --reasoning_effort = "minimal",
-    --verbosity = "low",
     messages = message_history
   }
 
@@ -66,6 +56,9 @@ local function queryChatGPT(message_history)
       requestBodyTable[key] = value
     end
   end
+
+  requestBodyTable.reasoning_effort = "none"
+  requestBodyTable.verbosity = "low"
 
   local requestBody = json.encode(requestBodyTable)
 

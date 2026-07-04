@@ -32,14 +32,6 @@ local function isOpenRouterUrl(url)
   return type(url) == "string" and url:lower():find("openrouter.ai", 1, true) ~= nil
 end
 
-local function isOpenAIUrl(url)
-  return type(url) == "string" and url:lower():find("api.openai.com", 1, true) ~= nil
-end
-
-local function isGpt5Model(model)
-  return type(model) == "string" and model:lower():match("^gpt%-5") ~= nil
-end
-
 local function countTokens(text)
   if not text or text == "" then
     return 0
@@ -88,11 +80,6 @@ local function buildRequestBody(message_history, configuration, request_paramete
     messages = message_history,
   }
 
-  if isOpenAIUrl(api_url) and isGpt5Model(llm) then
-    requestBodyTable.reasoning_effort = "low"
-    requestBodyTable.verbosity = "low"
-  end
-
   if isOpenRouterUrl(api_url) then
     requestBodyTable.provider = {
       sort = "latency"
@@ -111,6 +98,8 @@ local function buildRequestBody(message_history, configuration, request_paramete
     end
   end
 
+  requestBodyTable.reasoning_effort = "none"
+  requestBodyTable.verbosity = "low"
   requestBodyTable.stream = true
 
   return api_url, json.encode(requestBodyTable)
