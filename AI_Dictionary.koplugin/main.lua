@@ -584,7 +584,8 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
     onPronunciation = ttsRequest and function()
       self:playDictionaryPronunciation(ttsRequest)
     end or nil,
-    benedict = self
+    benedict = self,
+    bottom_sheet = true,
   }
 
   ui.highlight:onClose()
@@ -1132,7 +1133,7 @@ function AskGPT:init()
       text = _("AI English Simplify"),
       enabled = Device:hasClipboard(),
       callback = function()
-          self:Query(_reader_highlight_instance, "AI English Explain", false,
+          self:Query(_reader_highlight_instance, "AI English Simplify", false,
             "I'm an advanced learner of English. I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
             "This is the context where it appears: '...{context}...'\n" ..
             "Rewrite it in simpler, more understandable English. Brevity is important.")
