@@ -32,6 +32,35 @@ local function isOpenRouterUrl(url)
   return type(url) == "string" and url:lower():find("openrouter.ai", 1, true) ~= nil
 end
 
+local function isHttpUrl(url)
+  return type(url) == "string" and url:lower():sub(1, 7) == "http://"
+end
+
+local function hasValue(value)
+  return type(value) == "string" and value:match("%S") ~= nil
+end
+
+local function getRequestClient(url)
+  if isHttpUrl(url) then
+    return http.request
+  end
+  return https.request
+end
+
+local function buildHeaders(requestBody, api_key_value)
+  local headers = {
+    ["Content-Type"] = "application/json",
+    ["Content-Length"] = tostring(#requestBody),
+    ["Accept"] = "text/event-stream",
+  }
+
+  if hasValue(api_key_value) then
+    headers["Authorization"] = "Bearer " .. api_key_value
+  end
+
+  return headers
+end
+
 local function countTokens(text)
   if not text or text == "" then
     return 0
@@ -110,12 +139,13 @@ local function queryChatGPTStream(message_history, opts)
 
   local configuration = loadConfiguration()
   local api_key_value = configuration and configuration.api_key or api_key
-  if not api_key_value or api_key_value == "" then
+  local api_url, requestBody = buildRequestBody(message_history, configuration, opts.request_parameters)
+
+  if not hasValue(api_key_value) and not isHttpUrl(api_url) then
     if opts.on_error then opts.on_error("No API key configured.") end
     return function() end
   end
 
-  local api_url, requestBody = buildRequestBody(message_history, configuration, opts.request_parameters)
   local accumulated = ""
   local token_count = 0
   local response_buffer = ""
@@ -157,15 +187,11 @@ local function queryChatGPTStream(message_history, opts)
     return 1
   end
 
-  local ok, code = https.request {
+  local requestClient = getRequestClient(api_url)
+  local ok, code = requestClient {
     url = api_url,
     method = "POST",
-    headers = {
-      ["Content-Type"] = "application/json",
-      ["Content-Length"] = tostring(#requestBody),
-      ["Accept"] = "text/event-stream",
-      ["Authorization"] = "Bearer " .. api_key_value,
-    },
+    headers = buildHeaders(requestBody, api_key_value),
     source = ltn12.source.string(requestBody),
     sink = sink,
   }
