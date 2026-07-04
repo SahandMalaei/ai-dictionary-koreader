@@ -15,6 +15,8 @@ local function get_logger()
 end
 
 local logger = get_logger()
+local android_player_cache = nil
+local android_player_plugin_dir = nil
 
 local function shell_quote(value)
   return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
@@ -108,6 +110,45 @@ local function start_detached(command, name)
   return os.execute(wrapper)
 end
 
+local function release_android_player()
+  if android_player_cache and android_player_cache.release then
+    android_player_cache:release()
+  end
+  android_player_cache = nil
+  android_player_plugin_dir = nil
+end
+
+local function get_android_player(AndroidAudioPlayer, plugin_dir)
+  if not android_player_cache or android_player_plugin_dir ~= plugin_dir then
+    release_android_player()
+    android_player_cache = AndroidAudioPlayer:new { plugin_dir = plugin_dir }
+    android_player_plugin_dir = plugin_dir
+  end
+  return android_player_cache
+end
+
+local function play_with_android(path, plugin_dir)
+  local ok, AndroidAudioPlayer = pcall(require, "android_audio_player")
+  if not ok then
+    logger.err("AI Dictionary audio: cannot load Android audio player:", AndroidAudioPlayer)
+    return false
+  end
+
+  local android_player = get_android_player(AndroidAudioPlayer, plugin_dir)
+  if android_player:play(path) then
+    return true
+  end
+
+  release_android_player()
+  android_player = get_android_player(AndroidAudioPlayer, plugin_dir)
+  if android_player:play(path) then
+    return true
+  end
+
+  release_android_player()
+  return false
+end
+
 local function play_with_kindle_lipc(path)
   os.execute("lipc-set-prop com.lab126.playermgr Stop '' 2>/dev/null")
   os.execute("lipc-set-prop com.lab126.audiomgrd setFocus 'audiobook' 2>/dev/null")
@@ -142,14 +183,8 @@ function AudioPlayer.play(path, plugin_dir)
   end
 
   if Device.isAndroid and Device:isAndroid() then
-    local ok, AndroidAudioPlayer = pcall(require, "android_audio_player")
-    if ok then
-      local android_player = AndroidAudioPlayer:new { plugin_dir = plugin_dir }
-      if android_player:play(path) then
-        return true
-      end
-    else
-      logger.err("AI Dictionary audio: cannot load Android audio player:", AndroidAudioPlayer)
+    if play_with_android(path, plugin_dir) then
+      return true
     end
   end
 

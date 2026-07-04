@@ -297,4 +297,31 @@ function AndroidAudioPlayer:play(path)
   return false
 end
 
+function AndroidAudioPlayer:release()
+  local android = self._android
+  if android then
+    pcall(function()
+      android.jni:context(android.app.activity.vm, function(jni)
+        local env = jni.env
+        if self._helper_ref and self._method.stopPlayback then
+          env[0].CallVoidMethod(env, self._helper_ref, self._method.stopPlayback)
+          check_exception(env)
+        end
+        if self._helper_ref then
+          env[0].DeleteGlobalRef(env, self._helper_ref)
+          self._helper_ref = nil
+        end
+        if self._helper_class_ref then
+          env[0].DeleteGlobalRef(env, self._helper_class_ref)
+          self._helper_class_ref = nil
+        end
+      end)
+    end)
+  end
+
+  self._method = {}
+  self._initialized = false
+  self._android = nil
+end
+
 return AndroidAudioPlayer
