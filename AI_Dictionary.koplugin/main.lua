@@ -106,7 +106,7 @@ local function format_inline_markdown_emphasis(text)
         return text
     end
 
-    -- Convert Markdown-style bold/emphasis to KOReader PTF bold markers.
+    -- Convert Markdown-style bold/emphasis (**x** or *x*) to KOReader PTF bold markers.
     -- The viewer is not a Markdown renderer, so without this, model output like
     -- *word* or **word** is shown with literal asterisks.
     text = text:gsub("%*%*([^*\r\n]+)%*%*", function(s)
@@ -383,9 +383,11 @@ local function render_answer(chatgpt_viewer, is_dictionary, title_case_selection
       local header_text, body_text = format_dictionary_output(title_case_selection, display_answer)
       return chatgpt_viewer:update(body_text, header_text)
     elseif preface_with_selection then
-      return chatgpt_viewer:update(string.format("%s %s", title_case_selection, display_answer))
+      display_answer = format_inline_markdown_emphasis(display_answer)
+      return chatgpt_viewer:update(PTF_HEADER .. string.format("%s %s", title_case_selection, display_answer))
     else
-      return chatgpt_viewer:update(string.format("%s %s", "", display_answer))
+      display_answer = format_inline_markdown_emphasis(display_answer)
+      return chatgpt_viewer:update(PTF_HEADER .. display_answer)
     end
 end
 
@@ -1099,7 +1101,7 @@ function AskGPT:init()
             "This is the context where it appears: '...{context}...'\n" ..
             "Use web search economically to identify or verify the book, character, place, term, reference, or allusion if that helps. " ..
             "Explain it in the context/lore of the book, and help me understand it better (like Amazon Kindle's X-Ray, but more concise). " ..
-            "No spoilers if it's fiction. Plain text. Keep your explanation brief (under 150 words), and ask no questions at the end.",
+            "No spoilers if it's fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep your explanation brief (under 150 words), and ask no questions at the end.",
             AI_EXPLAIN_WEB_SEARCH_PARAMETERS)
       end,
     }
@@ -1113,7 +1115,7 @@ function AskGPT:init()
           self:Query(_reader_highlight_instance, "AI English Explain", false,
             "I'm an advanced learner of English. I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
             "This is the context where it appears: '...{context}...'\n" ..
-            "Explain its meaning in simple understandable English. Keep your explanation brief and under 30 words.")
+            "Rewrite it in simpler, more understandable English. Brevity is important.")
       end,
     }
   end)
