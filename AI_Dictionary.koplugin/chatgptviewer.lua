@@ -10,6 +10,7 @@ Displays some text in a scrollable view.
 ]]
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
+local BottomContainer = require("ui/widget/container/bottomcontainer")
 local ButtonTable = require("ui/widget/buttontable")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local CheckButton = require("ui/widget/checkbutton")
@@ -20,6 +21,7 @@ local FrameContainer = require("ui/widget/container/framecontainer")
 local GestureRange = require("ui/gesturerange")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local InputDialog = require("ui/widget/inputdialog")
+local LineWidget = require("ui/widget/linewidget")
 local MovableContainer = require("ui/widget/container/movablecontainer")
 local Notification = require("ui/widget/notification")
 local ScrollTextWidget = require("ui/widget/scrolltextwidget")
@@ -34,6 +36,18 @@ local T = require("ffi/util").template
 local util = require("util")
 local _ = require("gettext")
 local Screen = Device.screen
+
+-- Change this value to adjust the bottom panel height later.
+-- 0.5 means half the screen, 0.6 means 60%, and so on.
+local DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION = 0.45
+
+-- Change this value to adjust the bottom panel's top button row height later.
+-- 0.75 means 75% of the normal KOReader ButtonTable text/content height.
+local DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE = 0.95
+
+local function scale_size(value, scale, minimum)
+  return math.max(minimum or 0, math.floor(value * scale + 0.5))
+end
 
 local ChatGPTViewer = InputContainer:extend {
   title = nil,
@@ -57,7 +71,7 @@ local ChatGPTViewer = InputContainer:extend {
   title_face = nil,               -- use default from TitleBar
   title_multilines = nil,         -- see TitleBar for details
   title_shrink_font_to_fit = nil, -- see TitleBar for details
-  text_face = Font:getFace("xx_smallinfofont"),
+  text_face = Font:getFace("xx_smallinfofont", 18),
   header_text = nil,
   header_face = nil,
   header_spacing = Size.padding.small,
@@ -65,6 +79,7 @@ local ChatGPTViewer = InputContainer:extend {
   text_padding = Size.padding.large,
   text_margin = Size.margin.small,
   button_padding = Size.padding.default,
+  default_button_fgcolor = Blitbuffer.Color8(0x22),
   -- Bottom row with Close, Find buttons. Also added when no caller's buttons defined.
   add_default_buttons = nil,
   default_hold_callback = nil,   -- on each default button
@@ -75,19 +90,30 @@ local ChatGPTViewer = InputContainer:extend {
 
   benedict = nil,
   stream_cancel = nil,
+
+  bottom_sheet = nil,
+  bottom_sheet_screen_fraction = DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION,
+  bottom_sheet_button_height_scale = DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE,
 }
 
 function ChatGPTViewer:init()
   -- calculate window dimension
   self.align = "center"
+  local screen_width = Screen:getWidth()
+  local screen_height = Screen:getHeight()
   self.region = Geom:new {
     x = 0, y = 0,
-    w = Screen:getWidth(),
-    h = Screen:getHeight(),
+    w = screen_width,
+    h = screen_height,
   }
-  local standardWidth = math.min(Screen:getWidth(), Screen:getHeight()) - Screen:scaleBySize(30)
-  self.width = standardWidth
-  self.height = standardWidth
+  if self.bottom_sheet then
+    self.width = screen_width
+    self.height = math.floor(screen_height * (self.bottom_sheet_screen_fraction or DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION))
+  else
+    local standardWidth = math.min(screen_width, screen_height) - Screen:scaleBySize(30)
+    self.width = standardWidth
+    self.height = standardWidth
+  end
 
   self._find_next = false
   self._find_next_button = false
@@ -98,16 +124,21 @@ function ChatGPTViewer:init()
   end
 
   if Device:isTouchDevice() then
-    local range = Geom:new {
-      x = 0, y = 0,
-      w = Screen:getWidth(),
-      h = Screen:getHeight(),
-    }
+    local range = self.region
+    local tap_close_range = range
+    if self.bottom_sheet then
+      tap_close_range = Geom:new {
+        x = 0,
+        y = 0,
+        w = screen_width,
+        h = screen_height - self.height,
+      }
+    end
     self.ges_events = {
       TapClose = {
         GestureRange:new {
           ges = "tap",
-          range = range,
+          range = tap_close_range,
         },
       },
       Swipe = {
@@ -152,17 +183,33 @@ function ChatGPTViewer:init()
     }
   end
 
-  local titlebar = TitleBar:new {
-    width = self.width,
-    align = "left",
-    with_bottom_line = true,
-    title = self.title,
-    title_face = self.title_face,
-    title_multilines = self.title_multilines,
-    title_shrink_font_to_fit = self.title_shrink_font_to_fit,
-    close_callback = function() self:onClose() end,
-    show_parent = self,
-  }
+  local top_separator_height = 0
+  local button_separator = nil
+  local button_separator_height = 0
+  if self.bottom_sheet then
+    button_separator_height = (Size.line and Size.line.thin) or 1
+    button_separator = LineWidget:new {
+      dimen = Geom:new { w = self.width, h = button_separator_height },
+      background = Blitbuffer.COLOR_GRAY,
+    }
+  end
+
+  local titlebar = nil
+  local titlebar_height = 0
+  if not self.bottom_sheet then
+    titlebar = TitleBar:new {
+      width = self.width,
+      align = "left",
+      with_bottom_line = true,
+      title = self.title,
+      title_face = self.title_face,
+      title_multilines = self.title_multilines,
+      title_shrink_font_to_fit = self.title_shrink_font_to_fit,
+      close_callback = function() self:onClose() end,
+      show_parent = self,
+    }
+    titlebar_height = titlebar:getHeight()
+  end
 
   -- Callback to enable/disable buttons, for at-top/at-bottom feedback
   local prev_at_top = false -- Buttons were created enabled
@@ -216,26 +263,84 @@ function ChatGPTViewer:init()
     })
   end
   table.insert(default_buttons, {
-    text = _("Close"),
+    text = _("✕"),
     callback = function()
       self:onClose()
     end,
     hold_callback = self.default_hold_callback,
   })
+  if self.bottom_sheet then
+    local button_height_scale = self.bottom_sheet_button_height_scale or DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE
+    local button_font_size = scale_size(20, button_height_scale, 1)
+    local button_content_height = Screen:scaleBySize(button_font_size)
+    for _, button in ipairs(default_buttons) do
+      button.font_size = button.font_size or button_font_size
+      button.height = button.height or button_content_height
+    end
+  end
   local buttons = self.buttons_table or {}
+  local default_buttons_row_index = nil
   if self.add_default_buttons or not self.buttons_table then
+    default_buttons_row_index = #buttons + 1
     table.insert(buttons, default_buttons)
   end
-  self.button_table = ButtonTable:new {
-    width = self.width - 2 * self.button_padding,
-    buttons = buttons,
-    zero_sep = true,
-    show_parent = self,
-  }
+  local button_table_width = self.width - 2 * self.button_padding
+  local button_table_sep_width = nil
+  local button_table_zero_sep = not self.bottom_sheet
+  local function make_button_table()
+    return ButtonTable:new {
+      width = button_table_width,
+      buttons = buttons,
+      sep_width = button_table_sep_width,
+      zero_sep = button_table_zero_sep,
+      show_parent = self,
+    }
+  end
+  if self.bottom_sheet then
+    local button_height_scale = self.bottom_sheet_button_height_scale or DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE
+    local original_buttontable_padding = Size.padding.buttontable
+    local original_vertical_span = Size.span.vertical_default
+    Size.padding.buttontable = scale_size(original_buttontable_padding, button_height_scale)
+    Size.span.vertical_default = scale_size(original_vertical_span, button_height_scale)
+    button_table_sep_width = scale_size(Size.line.medium, button_height_scale, 1)
+    local ok, button_table = pcall(make_button_table)
+    Size.padding.buttontable = original_buttontable_padding
+    Size.span.vertical_default = original_vertical_span
+    if not ok then
+      error(button_table)
+    end
+    self.button_table = button_table
+  else
+    self.button_table = make_button_table()
+  end
+  if default_buttons_row_index and self.default_button_fgcolor then
+    local default_buttons_row = self.button_table.buttons_layout and self.button_table.buttons_layout[default_buttons_row_index]
+    if default_buttons_row then
+      for _, button in ipairs(default_buttons_row) do
+        if button.text and button.label_widget then
+          button.label_widget.fgcolor = self.default_button_fgcolor
+          if button.label_widget.update then
+            button.label_widget:update()
+          end
+        end
+      end
+    end
+  end
 
-  local textw_height = self.height - titlebar:getHeight() - self.button_table:getSize().h
-  local inner_width = self.width - 2 * self.text_padding - 2 * self.text_margin
-  local inner_height = textw_height - 2 * self.text_padding - 2 * self.text_margin
+  local textw_height = self.height - top_separator_height - button_separator_height - titlebar_height - self.button_table:getSize().h
+  if textw_height < 1 then
+    textw_height = 1
+  end
+  local text_padding_h = self.text_padding
+  local text_padding_v = self.text_padding
+  if self.bottom_sheet then
+    text_padding_h = math.floor(self.text_padding * 2 + 0.5)
+  end
+  local inner_width = self.width - 2 * text_padding_h - 2 * self.text_margin
+  local inner_height = textw_height - 2 * text_padding_v - 2 * self.text_margin
+  if inner_height < 1 then
+    inner_height = 1
+  end
   local header_widget = nil
   local header_height = 0
   if self.header_text and self.header_text ~= "" then
@@ -294,54 +399,80 @@ function ChatGPTViewer:init()
   end
 
   self.textw = FrameContainer:new {
-    padding = self.text_padding,
+    padding_left = text_padding_h,
+    padding_right = text_padding_h,
+    padding_top = text_padding_v,
+    padding_bottom = text_padding_v,
     margin = self.text_margin,
     bordersize = 0,
     text_group,
   }
 
+  local frame_widgets = {}
+  if self.bottom_sheet then
+    table.insert(frame_widgets, CenterContainer:new {
+      dimen = Geom:new {
+        w = self.width,
+        h = self.button_table:getSize().h,
+      },
+      self.button_table,
+    })
+    table.insert(frame_widgets, button_separator)
+  else
+    table.insert(frame_widgets, titlebar)
+  end
+  table.insert(frame_widgets, CenterContainer:new {
+    dimen = Geom:new {
+      w = self.width,
+      h = self.bottom_sheet and textw_height or self.textw:getSize().h,
+    },
+    self.textw,
+  })
+  if not self.bottom_sheet then
+    table.insert(frame_widgets, CenterContainer:new {
+      dimen = Geom:new {
+        w = self.width,
+        h = self.button_table:getSize().h,
+      },
+      self.button_table,
+    })
+  end
+
   self.frame = FrameContainer:new {
-    radius = Size.radius.window,
+    radius = self.bottom_sheet and 0 or Size.radius.window,
+    bordersize = self.bottom_sheet and scale_size(Size.line.medium, 2, 1) or nil,
     padding = 0,
     margin = 0,
     background = Blitbuffer.COLOR_WHITE,
-    VerticalGroup:new {
-      titlebar,
-      CenterContainer:new {
-        dimen = Geom:new {
-          w = self.width,
-          h = self.textw:getSize().h,
-        },
-        self.textw,
-      },
-      CenterContainer:new {
-        dimen = Geom:new {
-          w = self.width,
-          h = self.button_table:getSize().h,
-        },
-        self.button_table,
-      }
+    color = self.bottom_sheet and Blitbuffer.COLOR_BLACK or nil,
+    VerticalGroup:new(frame_widgets)
+  }
+  if self.bottom_sheet then
+    self[1] = BottomContainer:new {
+      dimen = self.region,
+      self.frame,
     }
-  }
-  self.movable = MovableContainer:new {
-    -- We'll handle these events ourselves, and call appropriate
-    -- MovableContainer's methods when we didn't process the event
-    ignore_events = {
-      -- These have effects over the text widget, and may
-      -- or may not be processed by it
-      "swipe", "hold", "hold_release", "hold_pan",
-      -- These do not have direct effect over the text widget,
-      -- but may happen while selecting text: we need to check
-      -- a few things before forwarding them
-      "touch", "pan", "pan_release",
-    },
-    self.frame,
-  }
-  self[1] = WidgetContainer:new {
-    align = self.align,
-    dimen = self.region,
-    self.movable,
-  }
+  else
+    self.movable = MovableContainer:new {
+      -- We'll handle these events ourselves, and call appropriate
+      -- MovableContainer's methods when we didn't process the event
+      ignore_events = {
+        -- These have effects over the text widget, and may
+        -- or may not be processed by it
+        "swipe", "hold", "hold_release", "hold_pan",
+        -- These do not have direct effect over the text widget,
+        -- but may happen while selecting text: we need to check
+        -- a few things before forwarding them
+        "touch", "pan", "pan_release",
+      },
+      self.frame,
+    }
+    self[1] = WidgetContainer:new {
+      align = self.align,
+      dimen = self.region,
+      self.movable,
+    }
+  end
 end
 
 function ChatGPTViewer:askAnotherQuestion()
@@ -378,12 +509,20 @@ function ChatGPTViewer:askAnotherQuestion()
 end
 
 function ChatGPTViewer:onCloseWidget()
+  if self.bottom_sheet then
+    UIManager:setDirty(nil, "ui")
+    return
+  end
   UIManager:setDirty(nil, function()
     return "partial", self.frame.dimen
   end)
 end
 
 function ChatGPTViewer:onShow()
+  if self.bottom_sheet then
+    UIManager:setDirty(self, "ui")
+    return true
+  end
   UIManager:setDirty(self, function()
     return "partial", self.frame.dimen
   end)
@@ -391,6 +530,10 @@ function ChatGPTViewer:onShow()
 end
 
 function ChatGPTViewer:onTapClose(arg, ges_ev)
+  if self.bottom_sheet then
+    self:onClose()
+    return true
+  end
   if ges_ev.pos:notIntersectWith(self.frame.dimen) then
     self:onClose()
   end
@@ -439,7 +582,10 @@ function ChatGPTViewer:onSwipe(arg, ges)
     end
   end
   -- Let our MovableContainer handle swipe outside of text
-  return self.movable:onMovableSwipe(arg, ges)
+  if self.movable then
+    return self.movable:onMovableSwipe(arg, ges)
+  end
+  return false
 end
 
 -- The following handlers are similar to the ones in DictQuickLookup:
@@ -448,14 +594,17 @@ end
 function ChatGPTViewer:onHoldStartText(_, ges)
   -- Forward Hold events not processed by TextBoxWidget event handler
   -- to our MovableContainer
-  return self.movable:onMovableHold(_, ges)
+  if self.movable then
+    return self.movable:onMovableHold(_, ges)
+  end
+  return false
 end
 
 function ChatGPTViewer:onHoldPanText(_, ges)
   -- Forward Hold events not processed by TextBoxWidget event handler
   -- to our MovableContainer
   -- We only forward it if we did forward the Touch
-  if self.movable._touch_pre_pan_was_inside then
+  if self.movable and self.movable._touch_pre_pan_was_inside then
     return self.movable:onMovableHoldPan(arg, ges)
   end
 end
@@ -463,7 +612,10 @@ end
 function ChatGPTViewer:onHoldReleaseText(_, ges)
   -- Forward Hold events not processed by TextBoxWidget event handler
   -- to our MovableContainer
-  return self.movable:onMovableHoldRelease(_, ges)
+  if self.movable then
+    return self.movable:onMovableHoldRelease(_, ges)
+  end
+  return false
 end
 
 -- These 3 event processors are just used to forward these events
@@ -471,6 +623,9 @@ end
 -- unwanted moves of the window while we are selecting text in
 -- the definition widget.
 function ChatGPTViewer:onForwardingTouch(arg, ges)
+  if not self.movable then
+    return false
+  end
   -- This Touch may be used as the Hold we don't get (for example,
   -- when we start our Hold on the bottom buttons)
   if not ges.pos:intersectWith(self.textw.dimen) then
@@ -482,6 +637,9 @@ function ChatGPTViewer:onForwardingTouch(arg, ges)
 end
 
 function ChatGPTViewer:onForwardingPan(arg, ges)
+  if not self.movable then
+    return false
+  end
   -- We only forward it if we did forward the Touch or are currently moving
   if self.movable._touch_pre_pan_was_inside or self.movable._moving then
     return self.movable:onMovablePan(arg, ges)
@@ -489,6 +647,9 @@ function ChatGPTViewer:onForwardingPan(arg, ges)
 end
 
 function ChatGPTViewer:onForwardingPanRelease(arg, ges)
+  if not self.movable then
+    return false
+  end
   -- We can forward onMovablePanRelease() does enough checks
   return self.movable:onMovablePanRelease(arg, ges)
 end
@@ -524,6 +685,9 @@ function ChatGPTViewer:update(new_text, new_header_text, options)
     stream_cancel = self.stream_cancel,
     header_face = self.header_face,
     header_spacing = self.header_spacing,
+    bottom_sheet = self.bottom_sheet,
+    bottom_sheet_screen_fraction = self.bottom_sheet_screen_fraction,
+    bottom_sheet_button_height_scale = self.bottom_sheet_button_height_scale,
   }
   if options.scroll_to_bottom ~= false then
     updated_viewer.scroll_text_w:scrollToBottom()
