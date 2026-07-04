@@ -343,6 +343,127 @@ local function repaint_now()
   end
 end
 
+local function get_rect_center_y(rect)
+  if type(rect) ~= "table" then
+    return nil
+  end
+
+  local y = tonumber(rect.y or rect.top)
+  if not y then
+    return nil
+  end
+
+  local h = tonumber(rect.h or rect.height)
+  if h then
+    return y + h / 2
+  end
+
+  local y1 = tonumber(rect.y1 or rect.bottom)
+  if y1 then
+    return (y + y1) / 2
+  end
+
+  return y
+end
+
+local function clamp_screen_y(y)
+  y = tonumber(y)
+  if not y then
+    return nil
+  end
+
+  local screen_h = Device.screen:getHeight()
+  if y < 0 or y > screen_h then
+    return nil
+  end
+
+  return y
+end
+
+local function get_screen_y_from_box(reader_highlight_instance, box, default_page)
+  local rect = type(box) == "table" and (box.rect or box) or nil
+  if not rect then
+    return nil
+  end
+
+  local view = reader_highlight_instance and reader_highlight_instance.view
+  local page = box.page or box.pageno or default_page
+  if view and page and type(view.pageToScreenTransform) == "function" then
+    local ok, screen_rect = pcall(view.pageToScreenTransform, view, page, rect)
+    local y = ok and clamp_screen_y(get_rect_center_y(screen_rect))
+    if y then
+      return y
+    end
+  end
+
+  return clamp_screen_y(get_rect_center_y(rect))
+end
+
+local function get_screen_y_from_boxes(reader_highlight_instance, boxes, default_page)
+  if type(boxes) ~= "table" then
+    return nil
+  end
+
+  local total_y, count = 0, 0
+  for _, box in ipairs(boxes) do
+    local y = get_screen_y_from_box(reader_highlight_instance, box, default_page)
+    if y then
+      total_y = total_y + y
+      count = count + 1
+    end
+  end
+
+  if count > 0 then
+    return total_y / count
+  end
+end
+
+local function get_selection_screen_y(reader_highlight_instance)
+  if type(reader_highlight_instance) ~= "table" then
+    return nil
+  end
+
+  local selected_text = reader_highlight_instance.selected_text or {}
+  local hold_pos = reader_highlight_instance.hold_pos or {}
+  local default_page = selected_text.page or selected_text.pageno or hold_pos.page or hold_pos.pageno
+  local y = get_screen_y_from_boxes(reader_highlight_instance, selected_text.sboxes, default_page)
+      or get_screen_y_from_boxes(reader_highlight_instance, selected_text.boxes, default_page)
+      or get_screen_y_from_boxes(reader_highlight_instance, selected_text.word_boxes, default_page)
+  if y then
+    return y
+  end
+
+  local document = reader_highlight_instance.ui and reader_highlight_instance.ui.document
+  if document and type(document.getScreenPositionFromXPointer) == "function" and selected_text.pos0 then
+    local ok, x_or_pos, y_or_nil = pcall(document.getScreenPositionFromXPointer, document, selected_text.pos0)
+    if ok then
+      if type(x_or_pos) == "table" then
+        y = clamp_screen_y(get_rect_center_y(x_or_pos))
+      else
+        y = clamp_screen_y(y_or_nil)
+      end
+      if y then
+        return y
+      end
+    end
+  end
+
+  y = get_screen_y_from_box(reader_highlight_instance, hold_pos, default_page)
+  if y then
+    return y
+  end
+
+  return clamp_screen_y(hold_pos.y)
+end
+
+local function get_bottom_sheet_position(reader_highlight_instance)
+  local y = get_selection_screen_y(reader_highlight_instance)
+  if y and y > Device.screen:getHeight() / 2 then
+    return "top"
+  end
+  return "bottom"
+end
+
 local function find_dictionary_section_boundary(text, after_index)
   local latest_start = nil
 
@@ -586,6 +707,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
     end or nil,
     benedict = self,
     bottom_sheet = true,
+    bottom_sheet_position = get_bottom_sheet_position(_reader_highlight_instance),
   }
 
   ui.highlight:onClose()

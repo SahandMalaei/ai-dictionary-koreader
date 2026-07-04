@@ -10,7 +10,6 @@ Displays some text in a scrollable view.
 ]]
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
-local BottomContainer = require("ui/widget/container/bottomcontainer")
 local ButtonTable = require("ui/widget/buttontable")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local CheckButton = require("ui/widget/checkbutton")
@@ -93,6 +92,7 @@ local ChatGPTViewer = InputContainer:extend {
   bottom_sheet = nil,
   bottom_sheet_screen_fraction = DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION,
   bottom_sheet_button_height_scale = DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE,
+  bottom_sheet_position = "bottom",
 }
 
 function ChatGPTViewer:init()
@@ -106,6 +106,9 @@ function ChatGPTViewer:init()
     h = screen_height,
   }
   if self.bottom_sheet then
+    if self.bottom_sheet_position ~= "top" then
+      self.bottom_sheet_position = "bottom"
+    end
     self.width = screen_width
     self.height = math.floor(screen_height * (self.bottom_sheet_screen_fraction or DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION))
   else
@@ -126,12 +129,21 @@ function ChatGPTViewer:init()
     local range = self.region
     local tap_close_range = range
     if self.bottom_sheet then
-      tap_close_range = Geom:new {
-        x = 0,
-        y = 0,
-        w = screen_width,
-        h = screen_height - self.height,
-      }
+      if self.bottom_sheet_position == "top" then
+        tap_close_range = Geom:new {
+          x = 0,
+          y = self.height,
+          w = screen_width,
+          h = screen_height - self.height,
+        }
+      else
+        tap_close_range = Geom:new {
+          x = 0,
+          y = 0,
+          w = screen_width,
+          h = screen_height - self.height,
+        }
+      end
     end
     self.ges_events = {
       TapClose = {
@@ -394,25 +406,38 @@ function ChatGPTViewer:init()
 
   local frame_widgets = {}
   if self.bottom_sheet then
-    table.insert(frame_widgets, CenterContainer:new {
+    local button_row = CenterContainer:new {
       dimen = Geom:new {
         w = self.width,
         h = self.button_table:getSize().h,
       },
       self.button_table,
-    })
-    table.insert(frame_widgets, button_separator)
+    }
+    local text_panel = CenterContainer:new {
+      dimen = Geom:new {
+        w = self.width,
+        h = textw_height,
+      },
+      self.textw,
+    }
+    if self.bottom_sheet_position == "top" then
+      table.insert(frame_widgets, text_panel)
+      table.insert(frame_widgets, button_separator)
+      table.insert(frame_widgets, button_row)
+    else
+      table.insert(frame_widgets, button_row)
+      table.insert(frame_widgets, button_separator)
+      table.insert(frame_widgets, text_panel)
+    end
   else
     table.insert(frame_widgets, titlebar)
-  end
-  table.insert(frame_widgets, CenterContainer:new {
-    dimen = Geom:new {
-      w = self.width,
-      h = self.bottom_sheet and textw_height or self.textw:getSize().h,
-    },
-    self.textw,
-  })
-  if not self.bottom_sheet then
+    table.insert(frame_widgets, CenterContainer:new {
+      dimen = Geom:new {
+        w = self.width,
+        h = self.textw:getSize().h,
+      },
+      self.textw,
+    })
     table.insert(frame_widgets, CenterContainer:new {
       dimen = Geom:new {
         w = self.width,
@@ -432,7 +457,8 @@ function ChatGPTViewer:init()
     VerticalGroup:new(frame_widgets)
   }
   if self.bottom_sheet then
-    self[1] = BottomContainer:new {
+    self[1] = WidgetContainer:new {
+      align = self.bottom_sheet_position,
       dimen = self.region,
       self.frame,
     }
@@ -672,6 +698,7 @@ function ChatGPTViewer:update(new_text, new_header_text, options)
     bottom_sheet = self.bottom_sheet,
     bottom_sheet_screen_fraction = self.bottom_sheet_screen_fraction,
     bottom_sheet_button_height_scale = self.bottom_sheet_button_height_scale,
+    bottom_sheet_position = self.bottom_sheet_position,
   }
   if options.scroll_to_bottom ~= false then
     updated_viewer.scroll_text_w:scrollToBottom()
