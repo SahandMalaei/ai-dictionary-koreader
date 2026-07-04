@@ -37,6 +37,18 @@ local util = require("util")
 local _ = require("gettext")
 local Screen = Device.screen
 
+-- Change this value to adjust the bottom panel height later.
+-- 0.5 means half the screen, 0.6 means 60%, and so on.
+local DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION = 0.6
+
+-- Change this value to adjust the bottom panel's top button row height later.
+-- 0.75 means 75% of the normal KOReader ButtonTable text/content height.
+local DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE = 0.95
+
+local function scale_size(value, scale, minimum)
+  return math.max(minimum or 0, math.floor(value * scale + 0.5))
+end
+
 local ChatGPTViewer = InputContainer:extend {
   title = nil,
   text = nil,
@@ -79,7 +91,8 @@ local ChatGPTViewer = InputContainer:extend {
   stream_cancel = nil,
 
   bottom_sheet = nil,
-  bottom_sheet_screen_fraction = 0.5,
+  bottom_sheet_screen_fraction = DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION,
+  bottom_sheet_button_height_scale = DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE,
 }
 
 function ChatGPTViewer:init()
@@ -94,7 +107,7 @@ function ChatGPTViewer:init()
   }
   if self.bottom_sheet then
     self.width = screen_width
-    self.height = math.floor(screen_height * self.bottom_sheet_screen_fraction)
+    self.height = math.floor(screen_height * (self.bottom_sheet_screen_fraction or DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION))
   else
     local standardWidth = math.min(screen_width, screen_height) - Screen:scaleBySize(30)
     self.width = standardWidth
@@ -257,22 +270,54 @@ function ChatGPTViewer:init()
     })
   end
   table.insert(default_buttons, {
-    text = _("Close"),
+    text = _("✕"),
     callback = function()
       self:onClose()
     end,
     hold_callback = self.default_hold_callback,
   })
+  if self.bottom_sheet then
+    local button_height_scale = self.bottom_sheet_button_height_scale or DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE
+    local button_font_size = scale_size(20, button_height_scale, 1)
+    local button_content_height = Screen:scaleBySize(button_font_size)
+    for _, button in ipairs(default_buttons) do
+      button.font_size = button.font_size or button_font_size
+      button.height = button.height or button_content_height
+    end
+  end
   local buttons = self.buttons_table or {}
   if self.add_default_buttons or not self.buttons_table then
     table.insert(buttons, default_buttons)
   end
-  self.button_table = ButtonTable:new {
-    width = self.width - 2 * self.button_padding,
-    buttons = buttons,
-    zero_sep = true,
-    show_parent = self,
-  }
+  local button_table_width = self.width - 2 * self.button_padding
+  local button_table_sep_width = nil
+  local button_table_zero_sep = not self.bottom_sheet
+  local function make_button_table()
+    return ButtonTable:new {
+      width = button_table_width,
+      buttons = buttons,
+      sep_width = button_table_sep_width,
+      zero_sep = button_table_zero_sep,
+      show_parent = self,
+    }
+  end
+  if self.bottom_sheet then
+    local button_height_scale = self.bottom_sheet_button_height_scale or DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE
+    local original_buttontable_padding = Size.padding.buttontable
+    local original_vertical_span = Size.span.vertical_default
+    Size.padding.buttontable = scale_size(original_buttontable_padding, button_height_scale)
+    Size.span.vertical_default = scale_size(original_vertical_span, button_height_scale)
+    button_table_sep_width = scale_size(Size.line.medium, button_height_scale, 1)
+    local ok, button_table = pcall(make_button_table)
+    Size.padding.buttontable = original_buttontable_padding
+    Size.span.vertical_default = original_vertical_span
+    if not ok then
+      error(button_table)
+    end
+    self.button_table = button_table
+  else
+    self.button_table = make_button_table()
+  end
 
   local textw_height = self.height - top_separator_height - button_separator_height - titlebar_height - self.button_table:getSize().h
   if textw_height < 1 then
@@ -281,7 +326,7 @@ function ChatGPTViewer:init()
   local text_padding_h = self.text_padding
   local text_padding_v = self.text_padding
   if self.bottom_sheet then
-    text_padding_h = math.floor(self.text_padding * 1.5 + 0.5)
+    text_padding_h = math.floor(self.text_padding * 2 + 0.5)
   end
   local inner_width = self.width - 2 * text_padding_h - 2 * self.text_margin
   local inner_height = textw_height - 2 * text_padding_v - 2 * self.text_margin
@@ -374,7 +419,7 @@ function ChatGPTViewer:init()
   table.insert(frame_widgets, CenterContainer:new {
     dimen = Geom:new {
       w = self.width,
-      h = self.textw:getSize().h,
+      h = self.bottom_sheet and textw_height or self.textw:getSize().h,
     },
     self.textw,
   })
@@ -635,6 +680,7 @@ function ChatGPTViewer:update(new_text, new_header_text, options)
     header_spacing = self.header_spacing,
     bottom_sheet = self.bottom_sheet,
     bottom_sheet_screen_fraction = self.bottom_sheet_screen_fraction,
+    bottom_sheet_button_height_scale = self.bottom_sheet_button_height_scale,
   }
   if options.scroll_to_bottom ~= false then
     updated_viewer.scroll_text_w:scrollToBottom()
