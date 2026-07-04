@@ -39,7 +39,7 @@ local Screen = Device.screen
 
 -- Change this value to adjust the bottom panel height later.
 -- 0.5 means half the screen, 0.6 means 60%, and so on.
-local DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION = 0.55
+local DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION = 0.45
 
 -- Change this value to adjust the bottom panel's top button row height later.
 -- 0.75 means 75% of the normal KOReader ButtonTable text/content height.
@@ -71,7 +71,7 @@ local ChatGPTViewer = InputContainer:extend {
   title_face = nil,               -- use default from TitleBar
   title_multilines = nil,         -- see TitleBar for details
   title_shrink_font_to_fit = nil, -- see TitleBar for details
-  text_face = Font:getFace("xx_smallinfofont", 17),
+  text_face = Font:getFace("xx_smallinfofont", 18),
   header_text = nil,
   header_face = nil,
   header_spacing = Size.padding.small,
@@ -424,11 +424,11 @@ function ChatGPTViewer:init()
 
   self.frame = FrameContainer:new {
     radius = self.bottom_sheet and 0 or Size.radius.window,
-    bordersize = self.bottom_sheet and scale_size(Size.line.medium, 3, 1) or nil,
+    bordersize = self.bottom_sheet and scale_size(Size.line.medium, 2, 1) or nil,
     padding = 0,
     margin = 0,
     background = Blitbuffer.COLOR_WHITE,
-    color = self.bottom_sheet and Blitbuffer.COLOR_DARK_GRAY or nil,
+    color = self.bottom_sheet and Blitbuffer.COLOR_BLACK or nil,
     VerticalGroup:new(frame_widgets)
   }
   if self.bottom_sheet then

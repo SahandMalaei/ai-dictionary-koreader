@@ -1122,7 +1122,7 @@ function AskGPT:init()
             "This is the context where it appears: '...{context}...'\n" ..
             "Use web search economically to identify or verify the book, character, place, term, reference, or allusion if that helps. " ..
             "Explain it in the context/lore of the book, and help me understand it better (like Amazon Kindle's X-Ray, but more concise). " ..
-            "No spoilers if it's fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep your explanation brief (under 150 words), and ask no questions at the end.",
+            "No spoilers if it's fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep your explanation brief (under 150 words, ONLY ONE PARAGRAPH), and ask no questions at the end.",
             AI_EXPLAIN_WEB_SEARCH_PARAMETERS)
       end,
     }
@@ -1153,11 +1153,11 @@ function AskGPT:init()
             "(v./n./idiom/etc.) " ..
             "/[ACCURATE and CORRECT American (US) English pronunciation in the form of IPA]/ " ..
             "([English alphabet pronunciation help American US English])\n" ..
-            "[Up to 3 feel and register tags separated by '•', e.g. slang, conversational, blunt, historical, formal, neutral, offensive (all lower-case)]\n\n" ..
-            "Definition: [Plain and understandable definition in under 20 words]\n\n" ..
-            "Example: [A natural sentence that uses the word(s) in the same meaning and register, but in a different situation]\n\n" ..
-            "Synonyms: [Up to 3 synonyms, if any exists. If there are no synonyms skip this section]\n\n" ..
-            "Paraphrase: [A short example sentence paraphrasing the selection using simpler words, with the same meaning and register]\n\n" ..
+            "[Up to 3 feel and register tags separated by '•', e.g. slang, conversational, blunt, historical, formal, neutral, offensive (all lower-case)]\n" ..
+            "Definition: [Plain and understandable definition in under 20 words]\n" ..
+            "Example: [A natural sentence that uses the word(s) in the same meaning and register, but in a different situation]\n" ..
+            "Synonyms: [Up to 3 synonyms, if any exists. If there are no synonyms skip this section]\n" ..
+            "Paraphrase: [A short example sentence paraphrasing the selection using simpler words, with the same meaning and register]\n" ..
             "Etymology: [Concise and helpful etymology with a focus on the different parts that make up the word or interesting history in case of idioms, in under 20 words]"..
             "(Pay close attention to the number of line breaks in the formatting of the response)")
       end,
