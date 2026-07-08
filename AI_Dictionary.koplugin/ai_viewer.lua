@@ -41,18 +41,20 @@ local SheetContainer = WidgetContainer:extend{}
 function SheetContainer:paintTo(bb, x, y)
   local content_size = self[1]:getSize()
   local content_x = x + math.floor((self.dimen.w - content_size.w) / 2)
-  local content_y = y
+  local edge_padding_vertical = self.edge_padding_vertical or 0
+  local content_y = y + edge_padding_vertical
   if self.anchor ~= "top" then
-    content_y = y + (self.dimen.h - content_size.h)
+    content_y = y + (self.dimen.h - content_size.h) - edge_padding_vertical
   end
   self[1]:paintTo(bb, content_x, content_y)
 end
 
 function SheetContainer:contentRange()
   local content_size = self[1]:getSize()
-  local content_y = self.dimen.y or 0
+  local edge_padding_vertical = self.edge_padding_vertical or 0
+  local content_y = (self.dimen.y or 0) + edge_padding_vertical
   if self.anchor ~= "top" then
-    content_y = content_y + self.dimen.h - content_size.h
+    content_y = (self.dimen.y or 0) + self.dimen.h - content_size.h - edge_padding_vertical
   end
   return Geom:new {
     x = (self.dimen.x or 0) + math.floor((self.dimen.w - content_size.w) / 2),
@@ -68,6 +70,9 @@ local DEFAULT_BOTTOM_SHEET_BODY_LINES = 11
 -- Change this value to adjust the bottom panel's top button row height later.
 -- 0.75 means 75% of the normal KOReader ButtonTable text/content height.
 local DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE = 0.95
+local DEFAULT_BOTTOM_SHEET_EDGE_PADDING = Screen:scaleBySize(12)
+local DEFAULT_ROUNDEDNESS_SIZE = Screen:scaleBySize(15)
+local DEFAULT_BUTTON_ROUNDEDNESS_SIZE = 0
 
 local function scale_size(value, scale, minimum)
   return math.max(minimum or 0, math.floor(value * scale + 0.5))
@@ -93,6 +98,21 @@ local function measure_text_line_height(args)
     probe:free(true)
   end
   return line_height
+end
+
+local function set_button_table_radius(button_table, radius)
+  if not button_table or not button_table.buttons_layout then
+    return
+  end
+  for _, row in ipairs(button_table.buttons_layout) do
+    for _, button in ipairs(row) do
+      if button.frame then
+        button.frame.radius = radius
+      elseif button[1] then
+        button[1].radius = radius
+      end
+    end
+  end
 end
 
 local AIViewer = InputContainer:extend {
@@ -142,6 +162,8 @@ local AIViewer = InputContainer:extend {
   bottom_sheet_position = "bottom",
   bottom_sheet_body_lines = DEFAULT_BOTTOM_SHEET_BODY_LINES,
   bottom_sheet_button_height_scale = DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE,
+  bottom_sheet_edge_padding_horizontal = DEFAULT_BOTTOM_SHEET_EDGE_PADDING,
+  bottom_sheet_edge_padding_vertical = DEFAULT_BOTTOM_SHEET_EDGE_PADDING,
 }
 
 function AIViewer:init()
@@ -149,6 +171,9 @@ function AIViewer:init()
   self.align = "center"
   local screen_width = Screen:getWidth()
   local screen_height = Screen:getHeight()
+  local bottom_sheet_padding_h = self.bottom_sheet and (self.bottom_sheet_edge_padding_horizontal or 0) or 0
+  local bottom_sheet_padding_v = self.bottom_sheet and (self.bottom_sheet_edge_padding_vertical or 0) or 0
+  local bottom_sheet_max_height = math.max(1, screen_height - 2 * bottom_sheet_padding_v)
   if self.bottom_sheet_position ~= "top" then
     self.bottom_sheet_position = "bottom"
   end
@@ -158,7 +183,7 @@ function AIViewer:init()
     h = screen_height,
   }
   if self.bottom_sheet then
-    self.width = screen_width
+    self.width = math.max(1, screen_width - 2 * bottom_sheet_padding_h)
   else
     local standardWidth = math.min(screen_width, screen_height) - Screen:scaleBySize(30)
     self.width = standardWidth
@@ -303,6 +328,7 @@ function AIViewer:init()
   else
     self.button_table = make_button_table()
   end
+  set_button_table_radius(self.button_table, DEFAULT_BUTTON_ROUNDEDNESS_SIZE)
   if default_buttons_row_index and self.default_button_fgcolor then
     local default_buttons_row = self.button_table.buttons_layout and self.button_table.buttons_layout[default_buttons_row_index]
     if default_buttons_row then
@@ -368,8 +394,8 @@ function AIViewer:init()
       textw_height = textw_height + header_height + self.header_spacing
     end
     self.height = textw_height + top_separator_height + button_separator_height + titlebar_height + self.button_table:getSize().h
-    if self.height > screen_height then
-      self.height = screen_height
+    if self.height > bottom_sheet_max_height then
+      self.height = bottom_sheet_max_height
       textw_height = self.height - top_separator_height - button_separator_height - titlebar_height - self.button_table:getSize().h
     end
   else
@@ -394,24 +420,11 @@ function AIViewer:init()
 
   if Device:isTouchDevice() then
     local range = self.region
-    local tap_close_range = range
-    if self.bottom_sheet then
-      local tap_close_y = 0
-      if self.bottom_sheet_position == "top" then
-        tap_close_y = self.height
-      end
-      tap_close_range = Geom:new {
-        x = 0,
-        y = tap_close_y,
-        w = screen_width,
-        h = screen_height - self.height,
-      }
-    end
     self.ges_events = {
       TapClose = {
         GestureRange:new {
           ges = "tap",
-          range = tap_close_range,
+          range = range,
         },
       },
       Swipe = {
@@ -539,8 +552,8 @@ function AIViewer:init()
   end
 
   self.frame = FrameContainer:new {
-    radius = self.bottom_sheet and 0 or Size.radius.window,
-    bordersize = self.bottom_sheet and scale_size(Size.line.medium, 2, 1) or nil,
+    radius = DEFAULT_ROUNDEDNESS_SIZE,
+    bordersize = self.bottom_sheet and Size.line.thick or nil,
     padding = 0,
     margin = 0,
     background = Blitbuffer.COLOR_WHITE,
@@ -550,6 +563,7 @@ function AIViewer:init()
   if self.bottom_sheet then
     self[1] = SheetContainer:new {
       anchor = self.bottom_sheet_position,
+      edge_padding_vertical = bottom_sheet_padding_v,
       dimen = self.region,
       self.frame,
     }
@@ -631,11 +645,11 @@ function AIViewer:onShow()
 end
 
 function AIViewer:onTapClose(arg, ges_ev)
-  if self.bottom_sheet then
-    self:onClose()
-    return true
+  local frame_dimen = self.frame.dimen
+  if self.bottom_sheet and self[1] and self[1].contentRange then
+    frame_dimen = self[1]:contentRange()
   end
-  if ges_ev.pos:notIntersectWith(self.frame.dimen) then
+  if frame_dimen and ges_ev.pos:notIntersectWith(frame_dimen) then
     self:onClose()
   end
   return true
@@ -794,6 +808,8 @@ function AIViewer:update(new_text, new_header_text, options)
     bottom_sheet_position = self.bottom_sheet_position,
     bottom_sheet_body_lines = self.bottom_sheet_body_lines,
     bottom_sheet_button_height_scale = self.bottom_sheet_button_height_scale,
+    bottom_sheet_edge_padding_horizontal = self.bottom_sheet_edge_padding_horizontal,
+    bottom_sheet_edge_padding_vertical = self.bottom_sheet_edge_padding_vertical,
   }
   if options.scroll_to_bottom == true then
     updated_viewer.scroll_text_w:scrollToBottom()
