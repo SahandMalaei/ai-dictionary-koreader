@@ -62,9 +62,8 @@ function SheetContainer:contentRange()
   }
 end
 
--- Change this value to adjust the bottom panel height later.
--- 0.5 means half the screen, 0.6 means 60%, and so on.
-local DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION = 0.45
+-- Change this value to adjust how many body text lines the bottom sheet reserves.
+local DEFAULT_BOTTOM_SHEET_BODY_LINES = 11
 
 -- Change this value to adjust the bottom panel's top button row height later.
 -- 0.75 means 75% of the normal KOReader ButtonTable text/content height.
@@ -72,6 +71,28 @@ local DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE = 0.95
 
 local function scale_size(value, scale, minimum)
   return math.max(minimum or 0, math.floor(value * scale + 0.5))
+end
+
+local function measure_text_line_height(args)
+  local probe = TextBoxWidget:new {
+    text = "",
+    face = args.face,
+    fgcolor = args.fgcolor,
+    width = args.width,
+    height = 1,
+    dialog = args.dialog,
+    alignment = args.alignment,
+    justified = args.justified,
+    lang = args.lang,
+    para_direction_rtl = args.para_direction_rtl,
+    auto_para_direction = args.auto_para_direction,
+    alignment_strict = args.alignment_strict,
+  }
+  local line_height = probe.line_height_px or probe:getSize().h
+  if probe.free then
+    probe:free(true)
+  end
+  return line_height
 end
 
 local AIViewer = InputContainer:extend {
@@ -118,7 +139,7 @@ local AIViewer = InputContainer:extend {
 
   bottom_sheet = nil,
   bottom_sheet_position = "bottom",
-  bottom_sheet_screen_fraction = DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION,
+  bottom_sheet_body_lines = DEFAULT_BOTTOM_SHEET_BODY_LINES,
   bottom_sheet_button_height_scale = DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE,
 }
 
@@ -137,7 +158,6 @@ function AIViewer:init()
   }
   if self.bottom_sheet then
     self.width = screen_width
-    self.height = math.floor(screen_height * (self.bottom_sheet_screen_fraction or DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION))
   else
     local standardWidth = math.min(screen_width, screen_height) - Screen:scaleBySize(30)
     self.width = standardWidth
@@ -150,70 +170,6 @@ function AIViewer:init()
 
   if Device:hasKeys() then
     self.key_events.Close = { { Device.input.group.Back } }
-  end
-
-  if Device:isTouchDevice() then
-    local range = self.region
-    local tap_close_range = range
-    if self.bottom_sheet then
-      local tap_close_y = 0
-      if self.bottom_sheet_position == "top" then
-        tap_close_y = self.height
-      end
-      tap_close_range = Geom:new {
-        x = 0,
-        y = tap_close_y,
-        w = screen_width,
-        h = screen_height - self.height,
-      }
-    end
-    self.ges_events = {
-      TapClose = {
-        GestureRange:new {
-          ges = "tap",
-          range = tap_close_range,
-        },
-      },
-      Swipe = {
-        GestureRange:new {
-          ges = "swipe",
-          range = range,
-        },
-      },
-      MultiSwipe = {
-        GestureRange:new {
-          ges = "multiswipe",
-          range = range,
-        },
-      },
-      -- Allow selection of one or more words (see textboxwidget.lua):
-      HoldStartText = {
-        GestureRange:new {
-          ges = "hold",
-          range = range,
-        },
-      },
-      HoldPanText = {
-        GestureRange:new {
-          ges = "hold",
-          range = range,
-        },
-      },
-      HoldReleaseText = {
-        GestureRange:new {
-          ges = "hold_release",
-          range = range,
-        },
-        -- callback function when HoldReleaseText is handled as args
-        args = function(text, hold_duration, start_idx, end_idx, to_source_index_func)
-          self:handleTextSelection(text, hold_duration, start_idx, end_idx, to_source_index_func)
-        end
-      },
-      -- These will be forwarded to MovableContainer after some checks
-      ForwardingTouch = { GestureRange:new { ges = "touch", range = range, }, },
-      ForwardingPan = { GestureRange:new { ges = "pan", range = range, }, },
-      ForwardingPanRelease = { GestureRange:new { ges = "pan_release", range = range, }, },
-    }
   end
 
   local top_separator_height = 0
@@ -360,20 +316,13 @@ function AIViewer:init()
     end
   end
 
-  local textw_height = self.height - top_separator_height - button_separator_height - titlebar_height - self.button_table:getSize().h
-  if textw_height < 1 then
-    textw_height = 1
-  end
   local text_padding_h = self.text_padding
   local text_padding_v = self.text_padding
   if self.bottom_sheet then
     text_padding_h = math.floor(self.text_padding * 2 + 0.5)
   end
   local inner_width = self.width - 2 * text_padding_h - 2 * self.text_margin
-  local inner_height = textw_height - 2 * text_padding_v - 2 * self.text_margin
-  if inner_height < 1 then
-    inner_height = 1
-  end
+  local inner_height = 1
   local header_widget = nil
   local header_height = 0
   if self.header_text and self.header_text ~= "" then
@@ -396,12 +345,114 @@ function AIViewer:init()
     header_height = header_widget:getSize().h
   end
 
+  local body_line_height = measure_text_line_height {
+    face = self.text_face,
+    fgcolor = self.fgcolor,
+    width = inner_width,
+    dialog = self,
+    alignment = self.alignment,
+    justified = self.justified,
+    lang = self.lang,
+    para_direction_rtl = self.para_direction_rtl,
+    auto_para_direction = self.auto_para_direction,
+    alignment_strict = self.alignment_strict,
+  }
+
+  local textw_height
+  if self.bottom_sheet then
+    local body_lines = math.max(1, self.bottom_sheet_body_lines or DEFAULT_BOTTOM_SHEET_BODY_LINES)
+    local requested_body_height = body_line_height * body_lines
+    textw_height = requested_body_height + 2 * text_padding_v + 2 * self.text_margin
+    if header_widget then
+      textw_height = textw_height + header_height + self.header_spacing
+    end
+    self.height = textw_height + top_separator_height + button_separator_height + titlebar_height + self.button_table:getSize().h
+    if self.height > screen_height then
+      self.height = screen_height
+      textw_height = self.height - top_separator_height - button_separator_height - titlebar_height - self.button_table:getSize().h
+    end
+  else
+    textw_height = self.height - top_separator_height - button_separator_height - titlebar_height - self.button_table:getSize().h
+  end
+  if textw_height < 1 then
+    textw_height = 1
+  end
+
+  inner_height = textw_height - 2 * text_padding_v - 2 * self.text_margin
+  if inner_height < 1 then
+    inner_height = 1
+  end
+
   local body_height = inner_height
   if header_widget then
     body_height = inner_height - header_height - self.header_spacing
     if body_height < 1 then
       body_height = 1
     end
+  end
+
+  if Device:isTouchDevice() then
+    local range = self.region
+    local tap_close_range = range
+    if self.bottom_sheet then
+      local tap_close_y = 0
+      if self.bottom_sheet_position == "top" then
+        tap_close_y = self.height
+      end
+      tap_close_range = Geom:new {
+        x = 0,
+        y = tap_close_y,
+        w = screen_width,
+        h = screen_height - self.height,
+      }
+    end
+    self.ges_events = {
+      TapClose = {
+        GestureRange:new {
+          ges = "tap",
+          range = tap_close_range,
+        },
+      },
+      Swipe = {
+        GestureRange:new {
+          ges = "swipe",
+          range = range,
+        },
+      },
+      MultiSwipe = {
+        GestureRange:new {
+          ges = "multiswipe",
+          range = range,
+        },
+      },
+      -- Allow selection of one or more words (see textboxwidget.lua):
+      HoldStartText = {
+        GestureRange:new {
+          ges = "hold",
+          range = range,
+        },
+      },
+      HoldPanText = {
+        GestureRange:new {
+          ges = "hold",
+          range = range,
+        },
+      },
+      HoldReleaseText = {
+        GestureRange:new {
+          ges = "hold_release",
+          range = range,
+        },
+        -- callback function when HoldReleaseText is handled as args
+        args = function(text, hold_duration, start_idx, end_idx, to_source_index_func)
+          self:handleTextSelection(text, hold_duration, start_idx, end_idx, to_source_index_func)
+        end
+      },
+      -- These will be forwarded to MovableContainer after some checks
+      ForwardingTouch = { GestureRange:new { ges = "touch", range = range, }, },
+      ForwardingPan = { GestureRange:new { ges = "pan", range = range, }, },
+      ForwardingPanRelease = { GestureRange:new { ges = "pan_release", range = range, }, },
+    }
   end
 
   self.scroll_text_w = ScrollTextWidget:new {
@@ -736,7 +787,7 @@ function AIViewer:update(new_text, new_header_text, options)
     header_spacing = self.header_spacing,
     bottom_sheet = self.bottom_sheet,
     bottom_sheet_position = self.bottom_sheet_position,
-    bottom_sheet_screen_fraction = self.bottom_sheet_screen_fraction,
+    bottom_sheet_body_lines = self.bottom_sheet_body_lines,
     bottom_sheet_button_height_scale = self.bottom_sheet_button_height_scale,
   }
   if options.scroll_to_bottom ~= false then

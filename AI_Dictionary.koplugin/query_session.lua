@@ -163,6 +163,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   local chatgpt_viewer = AIViewer:new {
     title = dialog_title,
     text = wait_message(),
+    header_text = is_dictionary_query and context.display_selection or nil,
     onAskQuestion = nil,
     onPronunciation = tts_request and function()
       TTS.play(tts_request)
