@@ -136,6 +136,7 @@ local AIViewer = InputContainer:extend {
 
   benedict = nil,
   stream_cancel = nil,
+  user_scroll_enabled = true,
 
   bottom_sheet = nil,
   bottom_sheet_position = "bottom",
@@ -666,6 +667,9 @@ end
 
 function AIViewer:onSwipe(arg, ges)
   if ges.pos:intersectWith(self.textw.dimen) then
+    if not self.user_scroll_enabled then
+      return true
+    end
     local direction = BD.flipDirectionIfMirroredUILayout(ges.direction)
     if direction == "west" then
       self.scroll_text_w:scrollText(1)
@@ -781,6 +785,7 @@ function AIViewer:update(new_text, new_header_text, options)
     onAskQuestion = self.onAskQuestion,
     onPronunciation = self.onPronunciation,
     benedict = self.benedict,
+    user_scroll_enabled = options.user_scroll_enabled ~= nil and options.user_scroll_enabled or self.user_scroll_enabled,
     close_callback = self.close_callback,
     stream_cancel = self.stream_cancel,
     header_face = self.header_face,
@@ -790,7 +795,7 @@ function AIViewer:update(new_text, new_header_text, options)
     bottom_sheet_body_lines = self.bottom_sheet_body_lines,
     bottom_sheet_button_height_scale = self.bottom_sheet_button_height_scale,
   }
-  if options.scroll_to_bottom ~= false then
+  if options.scroll_to_bottom == true then
     updated_viewer.scroll_text_w:scrollToBottom()
   end
   UIManager:show(updated_viewer)

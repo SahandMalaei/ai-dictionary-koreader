@@ -61,7 +61,9 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
   local last_rendered_answer = nil
   local cancel_stream
 
-  local function update_viewer(answer, final_debug_prompt)
+  current_viewer.user_scroll_enabled = false
+
+  local function update_viewer(answer, final_debug_prompt, update_options)
     last_rendered_answer = answer
     current_viewer = AnswerFormatter.render_answer(
       current_viewer,
@@ -69,7 +71,8 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       display_selection,
       preface_with_selection,
       answer,
-      final_debug_prompt
+      final_debug_prompt,
+      update_options
     )
     current_viewer.stream_cancel = cancel_stream
     repaint_now()
@@ -83,16 +86,18 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
         if boundary then
           last_rendered_dictionary_boundary = boundary
           local partial_answer = accumulated:sub(1, boundary - 1):gsub("%s+$", "")
-          update_viewer(partial_answer)
+          update_viewer(partial_answer, nil, { user_scroll_enabled = false })
         end
       elseif token_count - last_rendered_token_count >= STREAM_UPDATE_TOKEN_INTERVAL then
         last_rendered_token_count = token_count
-        update_viewer(accumulated)
+        update_viewer(accumulated, nil, { user_scroll_enabled = false })
       end
     end,
     on_done = function(accumulated)
       if accumulated ~= last_rendered_answer or debug_prompt then
-        update_viewer(accumulated, debug_prompt)
+        update_viewer(accumulated, debug_prompt, { user_scroll_enabled = true })
+      else
+        current_viewer.user_scroll_enabled = true
       end
       if on_success then
         on_success(accumulated)
@@ -102,7 +107,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       end
     end,
     on_error = function(err)
-      update_viewer("Error querying AI: " .. tostring(err))
+      update_viewer("Error querying AI: " .. tostring(err), nil, { user_scroll_enabled = true })
       if on_complete then
         on_complete()
       end
@@ -118,9 +123,11 @@ function QuerySession.stream_plain_answer(chatgpt_viewer, message_history, on_co
   local last_rendered_answer = nil
   local cancel_stream
 
-  local function update_viewer(answer)
+  current_viewer.user_scroll_enabled = false
+
+  local function update_viewer(answer, update_options)
     last_rendered_answer = answer
-    current_viewer = current_viewer:update(answer, nil, { scroll_to_bottom = false })
+    current_viewer = current_viewer:update(answer, nil, update_options)
     current_viewer.stream_cancel = cancel_stream
     repaint_now()
   end
@@ -129,19 +136,21 @@ function QuerySession.stream_plain_answer(chatgpt_viewer, message_history, on_co
     on_delta = function(_, accumulated, token_count)
       if token_count - last_rendered_token_count >= STREAM_UPDATE_TOKEN_INTERVAL then
         last_rendered_token_count = token_count
-        update_viewer(accumulated)
+        update_viewer(accumulated, { user_scroll_enabled = false })
       end
     end,
     on_done = function(accumulated)
       if accumulated ~= last_rendered_answer then
-        update_viewer(accumulated)
+        update_viewer(accumulated, { user_scroll_enabled = true })
+      else
+        current_viewer.user_scroll_enabled = true
       end
       if on_complete then
         on_complete()
       end
     end,
     on_error = function(err)
-      update_viewer("Error querying AI: " .. tostring(err))
+      update_viewer("Error querying AI: " .. tostring(err), { user_scroll_enabled = true })
       if on_complete then
         on_complete()
       end
@@ -169,6 +178,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       TTS.play(tts_request)
     end or nil,
     benedict = plugin,
+    user_scroll_enabled = not NetworkMgr:isOnline(),
     bottom_sheet = true,
     bottom_sheet_position = context.viewer_position,
     close_callback = function()
@@ -229,9 +239,10 @@ function QuerySession.start_report(report_viewer, report_prompt)
 end
 
 function QuerySession.regenerate(plugin, chatgpt_viewer)
-  local updated_viewer = chatgpt_viewer:update(wait_message())
+  local online = NetworkMgr:isOnline()
+  local updated_viewer = chatgpt_viewer:update(wait_message(), nil, { user_scroll_enabled = not online })
 
-  if not NetworkMgr:isOnline() then
+  if not online then
     return
   end
 

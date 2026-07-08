@@ -93,17 +93,17 @@ function AnswerFormatter.append_debug_prompt(answer, prompt)
   return tostring(answer or "") .. "\n\nDebug: prompt sent to AI\n\n" .. prompt
 end
 
-function AnswerFormatter.render_answer(chatgpt_viewer, is_dictionary, display_selection, preface_with_selection, answer, debug_prompt)
+function AnswerFormatter.render_answer(chatgpt_viewer, is_dictionary, display_selection, preface_with_selection, answer, debug_prompt, update_options)
   local display_answer = AnswerFormatter.append_debug_prompt(answer, debug_prompt)
   if is_dictionary then
     local header_text, body_text = AnswerFormatter.format_dictionary_output(display_selection, display_answer)
-    return chatgpt_viewer:update(body_text, header_text)
+    return chatgpt_viewer:update(body_text, header_text, update_options)
   elseif preface_with_selection then
     display_answer = AnswerFormatter.format_inline_markdown_emphasis(display_answer)
-    return chatgpt_viewer:update(PTF_HEADER .. string.format("%s %s", display_selection, display_answer))
+    return chatgpt_viewer:update(PTF_HEADER .. string.format("%s %s", display_selection, display_answer), nil, update_options)
   else
     display_answer = AnswerFormatter.format_inline_markdown_emphasis(display_answer)
-    return chatgpt_viewer:update(PTF_HEADER .. display_answer)
+    return chatgpt_viewer:update(PTF_HEADER .. display_answer, nil, update_options)
   end
 end
 
