@@ -10,7 +10,6 @@ Displays some text in a scrollable view.
 ]]
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
-local BottomContainer = require("ui/widget/container/bottomcontainer")
 local ButtonTable = require("ui/widget/buttontable")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local CheckButton = require("ui/widget/checkbutton")
@@ -36,6 +35,32 @@ local T = require("ffi/util").template
 local util = require("util")
 local _ = require("gettext")
 local Screen = Device.screen
+
+local SheetContainer = WidgetContainer:extend{}
+
+function SheetContainer:paintTo(bb, x, y)
+  local content_size = self[1]:getSize()
+  local content_x = x + math.floor((self.dimen.w - content_size.w) / 2)
+  local content_y = y
+  if self.anchor ~= "top" then
+    content_y = y + (self.dimen.h - content_size.h)
+  end
+  self[1]:paintTo(bb, content_x, content_y)
+end
+
+function SheetContainer:contentRange()
+  local content_size = self[1]:getSize()
+  local content_y = self.dimen.y or 0
+  if self.anchor ~= "top" then
+    content_y = content_y + self.dimen.h - content_size.h
+  end
+  return Geom:new {
+    x = (self.dimen.x or 0) + math.floor((self.dimen.w - content_size.w) / 2),
+    y = content_y,
+    w = content_size.w,
+    h = content_size.h,
+  }
+end
 
 -- Change this value to adjust the bottom panel height later.
 -- 0.5 means half the screen, 0.6 means 60%, and so on.
@@ -92,6 +117,7 @@ local AIViewer = InputContainer:extend {
   stream_cancel = nil,
 
   bottom_sheet = nil,
+  bottom_sheet_position = "bottom",
   bottom_sheet_screen_fraction = DEFAULT_BOTTOM_SHEET_SCREEN_FRACTION,
   bottom_sheet_button_height_scale = DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE,
 }
@@ -101,6 +127,9 @@ function AIViewer:init()
   self.align = "center"
   local screen_width = Screen:getWidth()
   local screen_height = Screen:getHeight()
+  if self.bottom_sheet_position ~= "top" then
+    self.bottom_sheet_position = "bottom"
+  end
   self.region = Geom:new {
     x = 0, y = 0,
     w = screen_width,
@@ -127,9 +156,13 @@ function AIViewer:init()
     local range = self.region
     local tap_close_range = range
     if self.bottom_sheet then
+      local tap_close_y = 0
+      if self.bottom_sheet_position == "top" then
+        tap_close_y = self.height
+      end
       tap_close_range = Geom:new {
         x = 0,
-        y = 0,
+        y = tap_close_y,
         w = screen_width,
         h = screen_height - self.height,
       }
@@ -410,24 +443,39 @@ function AIViewer:init()
 
   local frame_widgets = {}
   if self.bottom_sheet then
-    table.insert(frame_widgets, CenterContainer:new {
+    local button_row = CenterContainer:new {
       dimen = Geom:new {
         w = self.width,
         h = self.button_table:getSize().h,
       },
       self.button_table,
-    })
-    table.insert(frame_widgets, button_separator)
+    }
+    if self.bottom_sheet_position == "top" then
+      table.insert(frame_widgets, CenterContainer:new {
+        dimen = Geom:new {
+          w = self.width,
+          h = textw_height,
+        },
+        self.textw,
+      })
+      table.insert(frame_widgets, button_separator)
+      table.insert(frame_widgets, button_row)
+    else
+      table.insert(frame_widgets, button_row)
+      table.insert(frame_widgets, button_separator)
+    end
   else
     table.insert(frame_widgets, titlebar)
   end
-  table.insert(frame_widgets, CenterContainer:new {
-    dimen = Geom:new {
-      w = self.width,
-      h = self.bottom_sheet and textw_height or self.textw:getSize().h,
-    },
-    self.textw,
-  })
+  if not (self.bottom_sheet and self.bottom_sheet_position == "top") then
+    table.insert(frame_widgets, CenterContainer:new {
+      dimen = Geom:new {
+        w = self.width,
+        h = self.bottom_sheet and textw_height or self.textw:getSize().h,
+      },
+      self.textw,
+    })
+  end
   if not self.bottom_sheet then
     table.insert(frame_widgets, CenterContainer:new {
       dimen = Geom:new {
@@ -448,7 +496,8 @@ function AIViewer:init()
     VerticalGroup:new(frame_widgets)
   }
   if self.bottom_sheet then
-    self[1] = BottomContainer:new {
+    self[1] = SheetContainer:new {
+      anchor = self.bottom_sheet_position,
       dimen = self.region,
       self.frame,
     }
@@ -686,6 +735,7 @@ function AIViewer:update(new_text, new_header_text, options)
     header_face = self.header_face,
     header_spacing = self.header_spacing,
     bottom_sheet = self.bottom_sheet,
+    bottom_sheet_position = self.bottom_sheet_position,
     bottom_sheet_screen_fraction = self.bottom_sheet_screen_fraction,
     bottom_sheet_button_height_scale = self.bottom_sheet_button_height_scale,
   }

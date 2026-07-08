@@ -1,8 +1,10 @@
 local AnswerFormatter = require("answer_formatter")
+local Device = require("device")
 local clean_up_string = require("string_cleanup")
 local get_selection_in_context = require("selection_context")
 
 local BookContext = {}
+local Screen = Device.screen
 
 local MAX_HL = 2000
 local MAX_TITLE = 100
@@ -42,6 +44,92 @@ function BookContext.get_current_chapter_name(plugin)
   return chapter and chapter.title or nil
 end
 
+local function update_bounds(bounds, box)
+  if type(box) ~= "table" then
+    return bounds
+  end
+
+  local y = box.y or box[2]
+  if not y then
+    return bounds
+  end
+
+  local h = box.h or box.height or box[4] or 0
+  local bottom = y + h
+  bounds = bounds or { top = y, bottom = bottom }
+  if y < bounds.top then
+    bounds.top = y
+  end
+  if bottom > bounds.bottom then
+    bounds.bottom = bottom
+  end
+  return bounds
+end
+
+local function page_box_to_screen(reader_highlight_instance, page, box)
+  local view = reader_highlight_instance and reader_highlight_instance.view
+  if view and page and type(view.pageToScreenTransform) == "function" then
+    local ok, screen_box = pcall(function()
+      return view:pageToScreenTransform(page, box)
+    end)
+    if ok and screen_box then
+      return screen_box
+    end
+  end
+  return box
+end
+
+local function selected_text_screen_bounds(reader_highlight_instance)
+  local selected_text = reader_highlight_instance and reader_highlight_instance.selected_text
+  if type(selected_text) ~= "table" then
+    return nil
+  end
+
+  local page = selected_text.pos0 and selected_text.pos0.page
+      or reader_highlight_instance.hold_pos and reader_highlight_instance.hold_pos.page
+  local bounds = nil
+
+  if type(selected_text.sboxes) == "table" then
+    for _, box in ipairs(selected_text.sboxes) do
+      bounds = update_bounds(bounds, page_box_to_screen(reader_highlight_instance, page, box))
+    end
+  end
+
+  if not bounds and type(selected_text.pboxes) == "table" then
+    for _, box in ipairs(selected_text.pboxes) do
+      bounds = update_bounds(bounds, page_box_to_screen(reader_highlight_instance, page, box))
+    end
+  end
+
+  if not bounds then
+    for _, pos_key in ipairs({ "pos0", "pos1" }) do
+      local pos = selected_text[pos_key]
+      if type(pos) == "table" and pos.y then
+        local pos_page = pos.page or page
+        bounds = update_bounds(bounds, page_box_to_screen(reader_highlight_instance, pos_page, {
+          x = pos.x or 0,
+          y = pos.y,
+          w = 1,
+          h = 1,
+        }))
+      end
+    end
+  end
+
+  return bounds
+end
+
+function BookContext.get_viewer_position(reader_highlight_instance)
+  local bounds = selected_text_screen_bounds(reader_highlight_instance)
+  if bounds then
+    local selection_midpoint = bounds.top + ((bounds.bottom - bounds.top) / 2)
+    if selection_midpoint >= Screen:getHeight() / 2 then
+      return "top"
+    end
+  end
+  return "bottom"
+end
+
 function BookContext.build_query_context(plugin, reader_highlight_instance, dialog_title)
   local ui = plugin.ui
   local title, author =
@@ -79,6 +167,7 @@ function BookContext.build_query_context(plugin, reader_highlight_instance, dial
       ["{context}"] = safe_selection_in_context,
     },
     display_selection = display_selection,
+    viewer_position = BookContext.get_viewer_position(reader_highlight_instance),
     selected_text = safe_highlighted_text,
     selection_context = safe_selection_in_context,
   }

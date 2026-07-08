@@ -169,6 +169,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     end or nil,
     benedict = plugin,
     bottom_sheet = true,
+    bottom_sheet_position = context.viewer_position,
     close_callback = function()
       close_selection_highlight(ui)
     end,
