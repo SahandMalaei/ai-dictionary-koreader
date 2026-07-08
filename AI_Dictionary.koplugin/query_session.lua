@@ -3,7 +3,7 @@ local UIManager = require("ui/uimanager")
 
 local AIViewer = require("ai_viewer")
 local AnswerFormatter = require("answer_formatter")
-local BookContext = require("book_context")
+local Context = require("context")
 local Config = require("configuration_manager")
 local TTS = require("tts")
 local queryAI = require("ai_query")
@@ -162,7 +162,7 @@ end
 
 function QuerySession.query(plugin, reader_highlight_instance, dialog_title, preface_with_selection, query, request_parameters)
   local ui = plugin.ui
-  local context = BookContext.build_query_context(plugin, reader_highlight_instance, dialog_title)
+  local context = Context.build_query_context(plugin, reader_highlight_instance, dialog_title)
   local is_dictionary_query = dialog_title == "AI Dictionary"
   local tts_request = nil
   if is_dictionary_query then
