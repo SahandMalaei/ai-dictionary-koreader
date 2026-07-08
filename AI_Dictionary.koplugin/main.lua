@@ -1,7 +1,7 @@
 local InputContainer = require("ui/widget/container/inputcontainer")
 
 local Actions = require("actions")
-local BookContext = require("book_context")
+local Context = require("context")
 local Config = require("configuration_manager")
 local LookupsReportUI = require("lookups_report_ui")
 local QuerySession = require("query_session")
@@ -23,7 +23,7 @@ function Benedict:Regenerate(chatgpt_viewer)
 end
 
 function Benedict:getCurrentChapterName()
-  return BookContext.get_current_chapter_name(self)
+  return Context.get_current_chapter_name(self)
 end
 
 function Benedict:createDictionaryTTSRequest(text, context)
