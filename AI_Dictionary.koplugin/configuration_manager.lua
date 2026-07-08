@@ -7,6 +7,7 @@ ConfigurationManager.CORE_CONFIGURATION_KEYS = {
   "voice_endpoint",
   "voice_model",
   "voice_voice",
+  "update_check",
   "debug_mode",
 }
 
@@ -18,10 +19,12 @@ ConfigurationManager.CORE_CONFIGURATION_KEY_SET = {
   voice_model = true,
   voice_voice = true,
   debug_mode = true,
+  update_check = true,
 }
 
 ConfigurationManager.BOOLEAN_CONFIGURATION_KEYS = {
   debug_mode = true,
+  update_check = true,
 }
 
 ConfigurationManager.DEPRECATED_CONFIGURATION_KEYS = {
@@ -41,6 +44,7 @@ ConfigurationManager.CONFIGURATION_LABELS = {
   voice_voice = "Voice",
   tts_speed = "Voice speed",
   debug_mode = "Debug mode",
+  update_check = "Check for updates",
 }
 
 function ConfigurationManager.get_configuration_path(plugin)
@@ -58,6 +62,9 @@ function ConfigurationManager.normalize(configuration)
   if configuration.text_model == nil then
     configuration.text_model = configuration.model
   end
+  if configuration.update_check == nil then
+    configuration.update_check = true
+  end
   return configuration
 end
 
@@ -71,12 +78,18 @@ function ConfigurationManager.load()
     api_key = "",
     text_endpoint = "https://api.openai.com/v1/chat/completions",
     text_model = "gpt-5-nano",
+    update_check = true,
   })
 end
 
 function ConfigurationManager.is_debug_mode_enabled()
   local configuration = ConfigurationManager.load()
   return configuration and configuration.debug_mode == true
+end
+
+function ConfigurationManager.is_update_check_enabled()
+  local configuration = ConfigurationManager.load()
+  return not configuration or configuration.update_check ~= false
 end
 
 local function is_array(value)

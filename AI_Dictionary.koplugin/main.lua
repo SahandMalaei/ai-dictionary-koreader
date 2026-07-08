@@ -2,6 +2,7 @@ local InputContainer = require("ui/widget/container/inputcontainer")
 
 local Actions = require("actions")
 local BookContext = require("book_context")
+local Config = require("configuration_manager")
 local LookupsReportUI = require("lookups_report_ui")
 local QuerySession = require("query_session")
 local SettingsMenu = require("settings_menu")
@@ -102,7 +103,9 @@ function Benedict:init()
   end
 
   self.updater = Updater:new(self)
-  self.updater:checkOnStartup()
+  if Config.is_update_check_enabled() then
+    self.updater:checkOnStartup()
+  end
 
   if self.ui and self.ui.highlight then
     Actions.register(self)
