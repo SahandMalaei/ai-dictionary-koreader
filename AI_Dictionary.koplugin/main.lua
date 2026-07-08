@@ -135,10 +135,6 @@ local function format_dictionary_output(selection, answer)
     return header, PTF_HEADER .. output
 end
 
-local function capitalize_first(s)
-    return (s:gsub("^%l", string.upper))
-end
-
 local function trim_to_dictionary_limit(text, limit)
   text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
   if #text < limit then
@@ -530,7 +526,7 @@ end
 
 local lastQuery = ""
 local lastPrefaceWithSelection = false
-local lastTitleCaseSelection = ""
+local lastDisplaySelection = ""
 local lastRequestParameters = nil
 local lastIsReport = false
 local waitMessage = ""
@@ -563,12 +559,12 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   local selectionInContext = get_selection_in_context(_reader_highlight_instance, highlightedText, 15)
   local safeSelectionInContext = clean_up_string(selectionInContext, MAX_HL)
 
-  local titleCaseSelection = capitalize_first(safeHighlightedText)
+  local displaySelection = safeHighlightedText
   if dialog_title == "AI Dictionary" then
     safeHighlightedText = trim_to_dictionary_limit(safeHighlightedText, 64)
-    titleCaseSelection = capitalize_first(safeHighlightedText)
+    displaySelection = safeHighlightedText
   end
-  lastTitleCaseSelection = titleCaseSelection
+  lastDisplaySelection = displaySelection
   local isDictionaryQuery = dialog_title == "AI Dictionary"
   local ttsRequest = nil
   if isDictionaryQuery and Device.isAndroid and Device:isAndroid() and Pronunciation.is_enabled() then
@@ -630,7 +626,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
       content = lastQuery
     }}
 
-    stream_answer(chatgpt_viewer, message_history, lastIsDictionary, titleCaseSelection, preface_with_selection, function(answer)
+    stream_answer(chatgpt_viewer, message_history, lastIsDictionary, displaySelection, preface_with_selection, function(answer)
       if lastIsDictionary and answer and answer ~= "" then
         save_lookup_entry(self.path, safeHighlightedText, safeSelectionInContext)
       end
@@ -753,7 +749,7 @@ function AskGPT:Regenerate(chatgpt_viewer)
     if lastIsReport then
       stream_plain_answer(updatedViewer, message_history)
     else
-      stream_answer(updatedViewer, message_history, lastIsDictionary, lastTitleCaseSelection, lastPrefaceWithSelection, nil, lastRequestParameters, nil, is_debug_mode_enabled() and lastQuery or nil)
+      stream_answer(updatedViewer, message_history, lastIsDictionary, lastDisplaySelection, lastPrefaceWithSelection, nil, lastRequestParameters, nil, is_debug_mode_enabled() and lastQuery or nil)
     end
   end)
 end
@@ -834,7 +830,7 @@ function AskGPT:generateLookupsReport(timeframe)
     local report_prompt = LookupsReport.build_prompt(entries, timeframe)
     lastQuery = report_prompt
     lastPrefaceWithSelection = false
-    lastTitleCaseSelection = ""
+    lastDisplaySelection = ""
     lastRequestParameters = nil
     lastIsDictionary = false
     lastIsReport = true
