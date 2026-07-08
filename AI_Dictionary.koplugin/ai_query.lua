@@ -28,16 +28,63 @@ local REQUEST_TIMEOUT_SECONDS = 20
 https.TIMEOUT = REQUEST_TIMEOUT_SECONDS
 http.TIMEOUT = REQUEST_TIMEOUT_SECONDS
 
-local function isOpenRouterUrl(url)
-  return type(url) == "string" and url:lower():find("openrouter.ai", 1, true) ~= nil
+local function hasValue(value)
+  return type(value) == "string" and value:match("%S") ~= nil
+end
+
+local function urlContains(url, needle)
+  return type(url) == "string" and url:lower():find(needle, 1, true) ~= nil
+end
+
+local ENDPOINT_PROFILES = {
+  {
+    id = "openai",
+    supports_verbosity = true,
+    matches = function(url)
+      return urlContains(url, "api.openai.com")
+    end,
+  },
+  {
+    id = "openrouter",
+    supports_verbosity = true,
+    supports_request_parameters = true,
+    matches = function(url)
+      return urlContains(url, "openrouter.ai")
+    end,
+    apply_body_defaults = function(requestBodyTable)
+      requestBodyTable.provider = requestBodyTable.provider or {
+        sort = "latency"
+      }
+    end,
+  },
+}
+
+local DEFAULT_ENDPOINT_PROFILE = {
+  id = "openai_compatible",
+}
+
+local function getEndpointProfile(api_url, configuration)
+  local configured_id = configuration and (configuration.text_endpoint_type or configuration.endpoint_type)
+
+  if hasValue(configured_id) then
+    for _, profile in ipairs(ENDPOINT_PROFILES) do
+      if profile.id == configured_id then
+        return profile
+      end
+    end
+  end
+
+  for _, profile in ipairs(ENDPOINT_PROFILES) do
+    if profile.matches and profile.matches(api_url) then
+      return profile
+    end
+  end
+
+  return DEFAULT_ENDPOINT_PROFILE
 end
 
 local function isHttpUrl(url)
   return type(url) == "string" and url:lower():sub(1, 7) == "http://"
-end
-
-local function hasValue(value)
-  return type(value) == "string" and value:match("%S") ~= nil
 end
 
 local function getRequestClient(url)
@@ -100,35 +147,49 @@ local function parseSseBuffer(buffer, on_payload)
   return buffer
 end
 
+local function copyParameters(target, source)
+  if not source then
+    return
+  end
+
+  for key, value in pairs(source) do
+    target[key] = value
+  end
+end
+
+local function applyDefaultParameters(requestBodyTable, endpointProfile, request_parameters)
+  endpointProfile = endpointProfile or DEFAULT_ENDPOINT_PROFILE
+
+  if endpointProfile.apply_body_defaults then
+    endpointProfile.apply_body_defaults(requestBodyTable)
+  end
+
+  if endpointProfile.supports_request_parameters then
+    copyParameters(requestBodyTable, request_parameters)
+  end
+
+  if requestBodyTable.reasoning_effort == nil then
+    requestBodyTable.reasoning_effort = "none"
+  end
+
+  if endpointProfile.supports_verbosity and requestBodyTable.verbosity == nil then
+    requestBodyTable.verbosity = "low"
+  end
+end
+
 local function buildRequestBody(message_history, configuration, request_parameters)
   local api_url = configuration and (configuration.text_endpoint or configuration.provider) or "https://api.openai.com/v1/chat/completions"
   local llm = configuration and (configuration.text_model or configuration.model) or "gpt-5-nano"
+  local endpointProfile = getEndpointProfile(api_url, configuration)
 
   local requestBodyTable = {
     model = llm,
     messages = message_history,
   }
 
-  if isOpenRouterUrl(api_url) then
-    requestBodyTable.provider = {
-      sort = "latency"
-    }
-  end
+  copyParameters(requestBodyTable, configuration and configuration.additional_parameters)
 
-  if configuration and configuration.additional_parameters then
-    for key, value in pairs(configuration.additional_parameters) do
-      requestBodyTable[key] = value
-    end
-  end
-
-  if isOpenRouterUrl(api_url) and request_parameters then
-    for key, value in pairs(request_parameters) do
-      requestBodyTable[key] = value
-    end
-  end
-
-  requestBodyTable.reasoning_effort = "none"
-  requestBodyTable.verbosity = "low"
+  applyDefaultParameters(requestBodyTable, endpointProfile, request_parameters)
   requestBodyTable.stream = true
 
   return api_url, json.encode(requestBodyTable)

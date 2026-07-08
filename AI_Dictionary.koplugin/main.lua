@@ -9,7 +9,7 @@ local ButtonDialog = require("ui/widget/buttondialog")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local UIManager = require("ui/uimanager")
-local ChatGPTViewer = require("chatgptviewer")
+local AIViewer = require("ai_viewer")
 local handleNewQuestion = require("dialogs")
 
 local queryAI = require("ai_query")
@@ -577,7 +577,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
     waitMessage = ONLINE_WAIT_MESSAGE
   end
 
-  local chatgpt_viewer = ChatGPTViewer:new {
+  local chatgpt_viewer = AIViewer:new {
     title = dialog_title,
     text = string.format(waitMessage),
     onAskQuestion = nil,
@@ -812,7 +812,7 @@ function AskGPT:generateLookupsReport(timeframe)
     return
   end
 
-  local report_viewer = ChatGPTViewer:new {
+  local report_viewer = AIViewer:new {
     title = "AI Dictionary Lookups Report",
     text = "Generating report...",
     onAskQuestion = nil,

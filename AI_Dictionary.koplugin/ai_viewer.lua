@@ -2,11 +2,11 @@
 Displays some text in a scrollable view.
 
 @usage
-    local chatgptviewer = ChatGPTViewer:new{
+    local ai_viewer = AIViewer:new{
         title = _("I can scroll!"),
         text = _("I'll need to be longer than this example to scroll."),
     }
-    UIManager:show(chatgptviewer)
+    UIManager:show(ai_viewer)
 ]]
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
@@ -49,7 +49,7 @@ local function scale_size(value, scale, minimum)
   return math.max(minimum or 0, math.floor(value * scale + 0.5))
 end
 
-local ChatGPTViewer = InputContainer:extend {
+local AIViewer = InputContainer:extend {
   title = nil,
   text = nil,
   width = nil,
@@ -96,7 +96,7 @@ local ChatGPTViewer = InputContainer:extend {
   bottom_sheet_button_height_scale = DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE,
 }
 
-function ChatGPTViewer:init()
+function AIViewer:init()
   -- calculate window dimension
   self.align = "center"
   local screen_width = Screen:getWidth()
@@ -475,7 +475,7 @@ function ChatGPTViewer:init()
   end
 end
 
-function ChatGPTViewer:askAnotherQuestion()
+function AIViewer:askAnotherQuestion()
   local input_dialog
   input_dialog = InputDialog:new {
     title = _("Ask another question"),
@@ -508,7 +508,7 @@ function ChatGPTViewer:askAnotherQuestion()
   input_dialog:onShowKeyboard()
 end
 
-function ChatGPTViewer:onCloseWidget()
+function AIViewer:onCloseWidget()
   if self.bottom_sheet then
     UIManager:setDirty(nil, "ui")
     return
@@ -518,7 +518,7 @@ function ChatGPTViewer:onCloseWidget()
   end)
 end
 
-function ChatGPTViewer:onShow()
+function AIViewer:onShow()
   if self.bottom_sheet then
     UIManager:setDirty(self, "ui")
     return true
@@ -529,7 +529,7 @@ function ChatGPTViewer:onShow()
   return true
 end
 
-function ChatGPTViewer:onTapClose(arg, ges_ev)
+function AIViewer:onTapClose(arg, ges_ev)
   if self.bottom_sheet then
     self:onClose()
     return true
@@ -540,7 +540,7 @@ function ChatGPTViewer:onTapClose(arg, ges_ev)
   return true
 end
 
-function ChatGPTViewer:onMultiSwipe(arg, ges_ev)
+function AIViewer:onMultiSwipe(arg, ges_ev)
   -- For consistency with other fullscreen widgets where swipe south can't be
   -- used to close and where we then allow any multiswipe to close, allow any
   -- multiswipe to close this widget too.
@@ -548,7 +548,7 @@ function ChatGPTViewer:onMultiSwipe(arg, ges_ev)
   return true
 end
 
-function ChatGPTViewer:onClose()
+function AIViewer:onClose()
   if self.stream_cancel then
     self.stream_cancel()
     self.stream_cancel = nil
@@ -560,11 +560,11 @@ function ChatGPTViewer:onClose()
   return true
 end
 
-function ChatGPTViewer:Regenerate()
+function AIViewer:Regenerate()
   self.benedict:Regenerate(self)
 end
 
-function ChatGPTViewer:onSwipe(arg, ges)
+function AIViewer:onSwipe(arg, ges)
   if ges.pos:intersectWith(self.textw.dimen) then
     local direction = BD.flipDirectionIfMirroredUILayout(ges.direction)
     if direction == "west" then
@@ -591,7 +591,7 @@ end
 -- The following handlers are similar to the ones in DictQuickLookup:
 -- we just forward to our MoveableContainer the events that our
 -- TextBoxWidget has not handled with text selection.
-function ChatGPTViewer:onHoldStartText(_, ges)
+function AIViewer:onHoldStartText(_, ges)
   -- Forward Hold events not processed by TextBoxWidget event handler
   -- to our MovableContainer
   if self.movable then
@@ -600,7 +600,7 @@ function ChatGPTViewer:onHoldStartText(_, ges)
   return false
 end
 
-function ChatGPTViewer:onHoldPanText(_, ges)
+function AIViewer:onHoldPanText(_, ges)
   -- Forward Hold events not processed by TextBoxWidget event handler
   -- to our MovableContainer
   -- We only forward it if we did forward the Touch
@@ -609,7 +609,7 @@ function ChatGPTViewer:onHoldPanText(_, ges)
   end
 end
 
-function ChatGPTViewer:onHoldReleaseText(_, ges)
+function AIViewer:onHoldReleaseText(_, ges)
   -- Forward Hold events not processed by TextBoxWidget event handler
   -- to our MovableContainer
   if self.movable then
@@ -622,7 +622,7 @@ end
 -- to our MovableContainer, under certain conditions, to avoid
 -- unwanted moves of the window while we are selecting text in
 -- the definition widget.
-function ChatGPTViewer:onForwardingTouch(arg, ges)
+function AIViewer:onForwardingTouch(arg, ges)
   if not self.movable then
     return false
   end
@@ -636,7 +636,7 @@ function ChatGPTViewer:onForwardingTouch(arg, ges)
   end
 end
 
-function ChatGPTViewer:onForwardingPan(arg, ges)
+function AIViewer:onForwardingPan(arg, ges)
   if not self.movable then
     return false
   end
@@ -646,7 +646,7 @@ function ChatGPTViewer:onForwardingPan(arg, ges)
   end
 end
 
-function ChatGPTViewer:onForwardingPanRelease(arg, ges)
+function AIViewer:onForwardingPanRelease(arg, ges)
   if not self.movable then
     return false
   end
@@ -654,7 +654,7 @@ function ChatGPTViewer:onForwardingPanRelease(arg, ges)
   return self.movable:onMovablePanRelease(arg, ges)
 end
 
-function ChatGPTViewer:handleTextSelection(text, hold_duration, start_idx, end_idx, to_source_index_func)
+function AIViewer:handleTextSelection(text, hold_duration, start_idx, end_idx, to_source_index_func)
   if self.text_selection_callback then
     self.text_selection_callback(text, hold_duration, start_idx, end_idx, to_source_index_func)
     return
@@ -668,10 +668,10 @@ function ChatGPTViewer:handleTextSelection(text, hold_duration, start_idx, end_i
   end
 end
 
-function ChatGPTViewer:update(new_text, new_header_text, options)
+function AIViewer:update(new_text, new_header_text, options)
   options = options or {}
   UIManager:close(self)
-  local updated_viewer = ChatGPTViewer:new {
+  local updated_viewer = AIViewer:new {
     title = self.title,
     text = new_text,
     header_text = new_header_text or self.header_text,
@@ -696,4 +696,4 @@ function ChatGPTViewer:update(new_text, new_header_text, options)
   return updated_viewer
 end
 
-return ChatGPTViewer
+return AIViewer
