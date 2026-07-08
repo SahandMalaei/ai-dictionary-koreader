@@ -26,7 +26,7 @@ function Actions.register(plugin)
           "I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
           "This is the context where it appears: '...{context}...'\n" ..
           "Use web search economically to identify or verify the book, character, place, term, reference, or allusion if that helps. " ..
-          "Explain it in the context/lore of the book, and help me understand it better (like Amazon Kindle's X-Ray, but more concise). " ..
+          "Explain it and dive deep in relation to the book, and help me understand it better (like Amazon Kindle's X-Ray, but more concise). " ..
           "No spoilers if it's fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep your explanation brief (under 150 words, ONLY ONE PARAGRAPH), and ask no questions at the end.",
           AI_EXPLAIN_WEB_SEARCH_PARAMETERS)
       end,
@@ -58,7 +58,7 @@ function Actions.register(plugin)
           "(v./n./idiom/etc.) " ..
           "/[ACCURATE and CORRECT American (US) English pronunciation in the form of IPA]/ " ..
           "([English alphabet pronunciation help American US English])\n" ..
-          "[Up to 3 feel and register tags separated by 'â€¢', e.g. slang, conversational, blunt, historical, formal, neutral, offensive (all lower-case)]\n" ..
+          "[Up to 3 feel and register tags separated by '•', e.g. slang, conversational, blunt, historical, formal, neutral, offensive (all lower-case)]\n" ..
           "Definition: [Plain and understandable definition in under 20 words]\n" ..
           "Example: [A natural sentence that uses the word(s) in the same meaning and register, but in a different situation]\n" ..
           "Synonyms: [Up to 3 synonyms, if any exists. If there are no synonyms skip this section]\n" ..

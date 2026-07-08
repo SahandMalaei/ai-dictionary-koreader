@@ -11,7 +11,7 @@ AI Dictionary gives you the meaning of your selected text **in the context** of 
 
 ## How to Use
 
-To use this plugin, You'll need to do a few things, which I've listed below.
+To use this plugin, you'll need to do a few things, which I've listed below.
 
 1. Get [KoReader](https://koreader.rocks/) installed on your e-reader/device.
 2. Download [the latest release of this plugin](https://github.com/SahandMalaei/ai-dictionary-koreader/releases/latest).
