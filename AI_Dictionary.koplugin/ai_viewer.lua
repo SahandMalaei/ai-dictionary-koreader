@@ -42,9 +42,14 @@ function SheetContainer:paintTo(bb, x, y)
   local content_size = self[1]:getSize()
   local content_x = x + math.floor((self.dimen.w - content_size.w) / 2)
   local edge_padding_vertical = self.edge_padding_vertical or 0
-  local content_y = y + edge_padding_vertical
-  if self.anchor ~= "top" then
-    content_y = y + (self.dimen.h - content_size.h) - edge_padding_vertical
+  local content_y
+  if self.content_y ~= nil then
+    content_y = y + self.content_y
+  else
+    content_y = y + edge_padding_vertical
+    if self.anchor ~= "top" then
+      content_y = y + (self.dimen.h - content_size.h) - edge_padding_vertical
+    end
   end
   self[1]:paintTo(bb, content_x, content_y)
 end
@@ -52,9 +57,14 @@ end
 function SheetContainer:contentRange()
   local content_size = self[1]:getSize()
   local edge_padding_vertical = self.edge_padding_vertical or 0
-  local content_y = (self.dimen.y or 0) + edge_padding_vertical
-  if self.anchor ~= "top" then
-    content_y = (self.dimen.y or 0) + self.dimen.h - content_size.h - edge_padding_vertical
+  local content_y
+  if self.content_y ~= nil then
+    content_y = (self.dimen.y or 0) + self.content_y
+  else
+    content_y = (self.dimen.y or 0) + edge_padding_vertical
+    if self.anchor ~= "top" then
+      content_y = (self.dimen.y or 0) + self.dimen.h - content_size.h - edge_padding_vertical
+    end
   end
   return Geom:new {
     x = (self.dimen.x or 0) + math.floor((self.dimen.w - content_size.w) / 2),
@@ -71,11 +81,22 @@ local DEFAULT_BOTTOM_SHEET_BODY_LINES = 11
 -- 0.75 means 75% of the normal KOReader ButtonTable text/content height.
 local DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE = 0.95
 local DEFAULT_BOTTOM_SHEET_EDGE_PADDING = Screen:scaleBySize(12)
+local DEFAULT_BOTTOM_SHEET_SELECTION_PADDING = Screen:scaleBySize(5)
 local DEFAULT_ROUNDEDNESS_SIZE = Screen:scaleBySize(15)
 local DEFAULT_BUTTON_ROUNDEDNESS_SIZE = 0
 
 local function scale_size(value, scale, minimum)
   return math.max(minimum or 0, math.floor(value * scale + 0.5))
+end
+
+local function clamp(value, minimum, maximum)
+  if value < minimum then
+    return minimum
+  end
+  if value > maximum then
+    return maximum
+  end
+  return value
 end
 
 local function measure_text_line_height(args)
@@ -164,6 +185,8 @@ local AIViewer = InputContainer:extend {
   bottom_sheet_button_height_scale = DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE,
   bottom_sheet_edge_padding_horizontal = DEFAULT_BOTTOM_SHEET_EDGE_PADDING,
   bottom_sheet_edge_padding_vertical = DEFAULT_BOTTOM_SHEET_EDGE_PADDING,
+  bottom_sheet_selection_padding = DEFAULT_BOTTOM_SHEET_SELECTION_PADDING,
+  bottom_sheet_selection_bounds = nil,
 }
 
 function AIViewer:init()
@@ -173,7 +196,10 @@ function AIViewer:init()
   local screen_height = Screen:getHeight()
   local bottom_sheet_padding_h = self.bottom_sheet and (self.bottom_sheet_edge_padding_horizontal or 0) or 0
   local bottom_sheet_padding_v = self.bottom_sheet and (self.bottom_sheet_edge_padding_vertical or 0) or 0
-  local bottom_sheet_max_height = math.max(1, screen_height - 2 * bottom_sheet_padding_v)
+  local bottom_sheet_selection_padding = self.bottom_sheet and (self.bottom_sheet_selection_padding or 0) or 0
+  local bottom_sheet_border_size = self.bottom_sheet and Size.line.thick or 0
+  local bottom_sheet_max_height = math.max(1, screen_height - 2 * bottom_sheet_padding_v - 2 * bottom_sheet_border_size)
+  local bottom_sheet_content_y = nil
   if self.bottom_sheet_position ~= "top" then
     self.bottom_sheet_position = "bottom"
   end
@@ -386,20 +412,47 @@ function AIViewer:init()
   }
 
   local textw_height
+  local non_text_height = top_separator_height + button_separator_height + titlebar_height + self.button_table:getSize().h
   if self.bottom_sheet then
+    local minimum_sheet_height = non_text_height + 1
     local body_lines = math.max(1, self.bottom_sheet_body_lines or DEFAULT_BOTTOM_SHEET_BODY_LINES)
     local requested_body_height = body_line_height * body_lines
     textw_height = requested_body_height + 2 * text_padding_v + 2 * self.text_margin
     if header_widget then
       textw_height = textw_height + header_height + self.header_spacing
     end
-    self.height = textw_height + top_separator_height + button_separator_height + titlebar_height + self.button_table:getSize().h
+    self.height = textw_height + non_text_height
     if self.height > bottom_sheet_max_height then
-      self.height = bottom_sheet_max_height
-      textw_height = self.height - top_separator_height - button_separator_height - titlebar_height - self.button_table:getSize().h
+      self.height = math.max(minimum_sheet_height, bottom_sheet_max_height)
+      textw_height = self.height - non_text_height
+    end
+    local selection_bounds = self.bottom_sheet_selection_bounds
+    if type(selection_bounds) == "table"
+        and type(selection_bounds.top) == "number"
+        and type(selection_bounds.bottom) == "number" then
+      local space_below = screen_height - bottom_sheet_padding_v - selection_bounds.bottom - bottom_sheet_selection_padding
+      local space_above = selection_bounds.top - bottom_sheet_selection_padding - bottom_sheet_padding_v
+      local visible_height = self.height + 2 * bottom_sheet_border_size
+      if visible_height <= space_below then
+        self.bottom_sheet_position = "bottom"
+        bottom_sheet_content_y = selection_bounds.bottom + bottom_sheet_selection_padding
+      else
+        self.bottom_sheet_position = "top"
+        if visible_height > space_above then
+          self.height = math.max(minimum_sheet_height, space_above - 2 * bottom_sheet_border_size)
+          textw_height = self.height - non_text_height
+          visible_height = self.height + 2 * bottom_sheet_border_size
+        end
+        bottom_sheet_content_y = selection_bounds.top - bottom_sheet_selection_padding - visible_height
+      end
+      bottom_sheet_content_y = clamp(
+        bottom_sheet_content_y,
+        bottom_sheet_padding_v,
+        math.max(bottom_sheet_padding_v, screen_height - bottom_sheet_padding_v - visible_height)
+      )
     end
   else
-    textw_height = self.height - top_separator_height - button_separator_height - titlebar_height - self.button_table:getSize().h
+    textw_height = self.height - non_text_height
   end
   if textw_height < 1 then
     textw_height = 1
@@ -553,7 +606,7 @@ function AIViewer:init()
 
   self.frame = FrameContainer:new {
     radius = DEFAULT_ROUNDEDNESS_SIZE,
-    bordersize = self.bottom_sheet and Size.line.thick or nil,
+    bordersize = self.bottom_sheet and bottom_sheet_border_size or nil,
     padding = 0,
     margin = 0,
     background = Blitbuffer.COLOR_WHITE,
@@ -563,6 +616,7 @@ function AIViewer:init()
   if self.bottom_sheet then
     self[1] = SheetContainer:new {
       anchor = self.bottom_sheet_position,
+      content_y = bottom_sheet_content_y,
       edge_padding_vertical = bottom_sheet_padding_v,
       dimen = self.region,
       self.frame,
@@ -810,6 +864,8 @@ function AIViewer:update(new_text, new_header_text, options)
     bottom_sheet_button_height_scale = self.bottom_sheet_button_height_scale,
     bottom_sheet_edge_padding_horizontal = self.bottom_sheet_edge_padding_horizontal,
     bottom_sheet_edge_padding_vertical = self.bottom_sheet_edge_padding_vertical,
+    bottom_sheet_selection_padding = self.bottom_sheet_selection_padding,
+    bottom_sheet_selection_bounds = self.bottom_sheet_selection_bounds,
   }
   if options.scroll_to_bottom == true then
     updated_viewer.scroll_text_w:scrollToBottom()

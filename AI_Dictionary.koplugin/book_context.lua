@@ -119,8 +119,8 @@ local function selected_text_screen_bounds(reader_highlight_instance)
   return bounds
 end
 
-function BookContext.get_viewer_position(reader_highlight_instance)
-  local bounds = selected_text_screen_bounds(reader_highlight_instance)
+function BookContext.get_viewer_position(reader_highlight_instance, bounds)
+  bounds = bounds or selected_text_screen_bounds(reader_highlight_instance)
   if bounds then
     local selection_midpoint = bounds.top + ((bounds.bottom - bounds.top) / 2)
     if selection_midpoint >= Screen:getHeight() / 2 then
@@ -151,6 +151,7 @@ function BookContext.build_query_context(plugin, reader_highlight_instance, dial
   local safe_highlighted_text = clean_up_string(highlighted_text, MAX_HL)
   local selection_in_context = get_selection_in_context(reader_highlight_instance, highlighted_text, 15)
   local safe_selection_in_context = clean_up_string(selection_in_context, MAX_HL)
+  local selection_bounds = selected_text_screen_bounds(reader_highlight_instance)
 
   local display_selection = safe_highlighted_text
   if dialog_title == "AI Dictionary" then
@@ -167,7 +168,8 @@ function BookContext.build_query_context(plugin, reader_highlight_instance, dial
       ["{context}"] = safe_selection_in_context,
     },
     display_selection = display_selection,
-    viewer_position = BookContext.get_viewer_position(reader_highlight_instance),
+    selection_bounds = selection_bounds,
+    viewer_position = BookContext.get_viewer_position(reader_highlight_instance, selection_bounds),
     selected_text = safe_highlighted_text,
     selection_context = safe_selection_in_context,
   }

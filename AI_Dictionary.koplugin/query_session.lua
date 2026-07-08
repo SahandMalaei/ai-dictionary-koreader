@@ -181,6 +181,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     user_scroll_enabled = not NetworkMgr:isOnline(),
     bottom_sheet = true,
     bottom_sheet_position = context.viewer_position,
+    bottom_sheet_selection_bounds = context.selection_bounds,
     close_callback = function()
       close_selection_highlight(ui)
     end,
