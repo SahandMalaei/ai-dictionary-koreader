@@ -343,6 +343,12 @@ local function repaint_now()
   end
 end
 
+local function close_selection_highlight(ui, keep_highlight)
+  if ui and ui.highlight and type(ui.highlight.onClose) == "function" then
+    ui.highlight:onClose(keep_highlight)
+  end
+end
+
 local function find_dictionary_section_boundary(text, after_index)
   local latest_start = nil
 
@@ -554,7 +560,7 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
   local safeChapter = clean_up_string(chapterClause, MAX_TITLE)
   local safeHighlightedText = clean_up_string(highlightedText, MAX_HL)
 
-  local selectionInContext = get_selection_in_context(_reader_highlight_instance, highlightedText, 10)
+  local selectionInContext = get_selection_in_context(_reader_highlight_instance, highlightedText, 15)
   local safeSelectionInContext = clean_up_string(selectionInContext, MAX_HL)
 
   local titleCaseSelection = capitalize_first(safeHighlightedText)
@@ -586,9 +592,12 @@ function AskGPT:Query(_reader_highlight_instance, dialog_title, preface_with_sel
     end or nil,
     benedict = self,
     bottom_sheet = true,
+    close_callback = function()
+      close_selection_highlight(ui)
+    end,
   }
 
-  ui.highlight:onClose()
+  close_selection_highlight(ui, true)
   UIManager:show(chatgpt_viewer)
 
   local replacements = {
