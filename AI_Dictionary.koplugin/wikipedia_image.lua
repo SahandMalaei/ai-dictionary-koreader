@@ -150,25 +150,7 @@ local function find_thumbnail(title, cancelled)
   return page and not page.missing and page.thumbnail and page.thumbnail.source or nil
 end
 
-function WikipediaImage.fetch(title_answer, cancelled)
-  local title = clean_title(title_answer)
-  if not title or cancelled() then
-    return nil
-  end
-  local image_url = find_thumbnail(title, cancelled)
-  if not image_url or cancelled() then
-    return nil
-  end
-  local data = get(image_url, "image/*", cancelled)
-  if not data or cancelled() then
-    return nil
-  end
-  local ok, source_bb = pcall(RenderImage.renderImageData, RenderImage, data, #data, false)
-  if not ok or not source_bb or cancelled() then
-    if source_bb and source_bb.free then source_bb:free() end
-    return nil
-  end
-
+local function make_boxed_image(source_bb, title)
   local source_width = source_bb:getWidth()
   local source_height = source_bb:getHeight()
   if source_width < 1 or source_height < 1 then
@@ -209,6 +191,37 @@ function WikipediaImage.fetch(title_answer, cancelled)
     bb = box_bb,
     title = title,
   }
+end
+
+function WikipediaImage.fetch(title_answer, cancelled)
+  local title = clean_title(title_answer)
+  if not title or cancelled() then
+    return nil
+  end
+  local image_url = find_thumbnail(title, cancelled)
+  if not image_url or cancelled() then
+    return nil
+  end
+  local data = get(image_url, "image/*", cancelled)
+  if not data or cancelled() then
+    return nil
+  end
+  local ok, source_bb = pcall(RenderImage.renderImageData, RenderImage, data, #data, false)
+  if not ok or not source_bb or cancelled() then
+    if source_bb and source_bb.free then source_bb:free() end
+    return nil
+  end
+  return make_boxed_image(source_bb, title)
+end
+
+function WikipediaImage.from_file(path, title)
+  if type(path) ~= "string" or path == "" then return nil end
+  local ok, source_bb = pcall(RenderImage.renderImageFile, RenderImage, path, false)
+  if not ok or not source_bb then
+    if source_bb and source_bb.free then source_bb:free() end
+    return nil
+  end
+  return make_boxed_image(source_bb, title)
 end
 
 return WikipediaImage

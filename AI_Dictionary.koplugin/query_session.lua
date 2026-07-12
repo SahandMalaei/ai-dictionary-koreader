@@ -97,8 +97,11 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
         return
       end
       if not image then
-        keep_empty_image_box()
-        return
+        image = WikipediaImage.from_file(session.no_image_placeholder_path, title)
+        if not image then
+          keep_empty_image_box()
+          return
+        end
       end
       local old_bb = placeholder.bb
       placeholder.bb = image.bb
@@ -241,7 +244,11 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   local is_dictionary_query = dialog_title == "AI Dictionary"
   local is_explain_query = dialog_title == "AI Explain"
   local image_protocol = is_dictionary_query or is_explain_query
-  local session = { cancelled = false, image_protocol = image_protocol }
+  local session = {
+    cancelled = false,
+    image_protocol = image_protocol,
+    no_image_placeholder_path = plugin.path .. "/resources/no-image-placeholder.jpg",
+  }
   local tts_request = nil
   if is_dictionary_query then
     tts_request = TTS.create_request_if_available(context.selected_text, context.selection_context, plugin.path)
@@ -341,7 +348,12 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
   local old_bb = old_images and old_images[1] and old_images[1].bb
   if old_bb and old_bb.free then old_bb:free() end
 
-  local session = { cancelled = false, image_protocol = state.last_image_protocol, current_viewer = updated_viewer }
+  local session = {
+    cancelled = false,
+    image_protocol = state.last_image_protocol,
+    current_viewer = updated_viewer,
+    no_image_placeholder_path = plugin.path .. "/resources/no-image-placeholder.jpg",
+  }
   updated_viewer.auxiliary_cancel = function()
     session.cancelled = true
     if session.image_lookup_action then UIManager:unschedule(session.image_lookup_action) end
