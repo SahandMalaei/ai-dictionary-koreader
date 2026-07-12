@@ -1,6 +1,7 @@
 local http = require("socket.http")
 local https = require("ssl.https")
 local Blitbuffer = require("ffi/blitbuffer")
+local Screen = require("device").screen
 local json = require("json")
 local RenderImage = require("ui/renderimage")
 local socket_url = require("socket.url")
@@ -9,7 +10,7 @@ local WikipediaImage = {}
 
 local REQUEST_TIMEOUT_SECONDS = 15
 local MAX_IMAGE_BYTES = 8 * 4096 * 4096
-local BOX_SIZE = 250
+local BOX_SIZE = math.max(1, math.floor(math.min(Screen:getWidth(), Screen:getHeight()) * 0.2 + 0.5))
 local BORDER_SIZE = 1
 local TEXT_PADDING_LEFT = 8
 local BUFFER_WIDTH = BOX_SIZE + TEXT_PADDING_LEFT
@@ -30,7 +31,7 @@ local function paint_outline(bb)
   bb:paintRect(TEXT_PADDING_LEFT, 0, BOX_SIZE, BORDER_SIZE, color)
   bb:paintRect(TEXT_PADDING_LEFT, BOX_SIZE - BORDER_SIZE, BOX_SIZE, BORDER_SIZE, color)
   bb:paintRect(TEXT_PADDING_LEFT, 0, BORDER_SIZE, BOX_SIZE, color)
-  bb:paintRect(BUFFER_WIDTH - BORDER_SIZE, 0, BORDER_SIZE, BOX_SIZE, color)
+  bb:paintRect(TEXT_PADDING_LEFT + BOX_SIZE - BORDER_SIZE, 0, BORDER_SIZE, BOX_SIZE, color)
 end
 
 local function request_client(url)

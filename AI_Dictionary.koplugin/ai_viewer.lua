@@ -419,6 +419,15 @@ function AIViewer:init()
     local minimum_sheet_height = non_text_height + 1
     local body_lines = math.max(1, self.bottom_sheet_body_lines or DEFAULT_BOTTOM_SHEET_BODY_LINES)
     local requested_body_height = body_line_height * body_lines
+    if self.images then
+      for _, image in ipairs(self.images) do
+        if image.fixed_box_size then
+          -- TextBoxWidget caps images at half a viewport. Give it enough room
+          -- to keep the requested image dimensions unchanged.
+          requested_body_height = math.max(requested_body_height, image.fixed_box_size * 2)
+        end
+      end
+    end
     textw_height = requested_body_height + 2 * text_padding_v + 2 * self.text_margin
     if header_widget then
       textw_height = textw_height + header_height + self.header_spacing
@@ -480,12 +489,13 @@ function AIViewer:init()
     for _, image in ipairs(self.images) do
       if image.fixed_box_size and image.bb then
         local image_padding_left = image.text_padding_left or 0
+        local fixed_width = image.fixed_box_size + image_padding_left
         local box_size = math.max(1, math.min(
           image.fixed_box_size,
-          math.max(1, math.floor(inner_width / 2) - image_padding_left),
-          math.floor(body_height / 2)
+          math.floor(body_height / 2),
+          math.floor((inner_width / 2) * image.fixed_box_size / fixed_width)
         ))
-        local image_width = box_size + image_padding_left
+        local image_width = math.max(1, math.floor(fixed_width * box_size / image.fixed_box_size))
         image.width = image_width
         image.height = box_size
         if image.bb:getWidth() ~= image_width or image.bb:getHeight() ~= box_size then
