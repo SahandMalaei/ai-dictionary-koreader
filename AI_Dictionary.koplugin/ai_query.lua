@@ -40,6 +40,7 @@ local ENDPOINT_PROFILES = {
   {
     id = "openai",
     supports_verbosity = true,
+    default_reasoning_effort = "minimal",
     matches = function(url)
       return urlContains(url, "api.openai.com")
     end,
@@ -48,6 +49,7 @@ local ENDPOINT_PROFILES = {
     id = "openrouter",
     supports_verbosity = true,
     supports_request_parameters = true,
+    default_reasoning_effort = "none",
     matches = function(url)
       return urlContains(url, "openrouter.ai")
     end,
@@ -169,7 +171,7 @@ local function applyDefaultParameters(requestBodyTable, endpointProfile, request
   end
 
   if requestBodyTable.reasoning_effort == nil then
-    requestBodyTable.reasoning_effort = "none"
+    requestBodyTable.reasoning_effort = endpointProfile.default_reasoning_effort or "none"
   end
 
   if endpointProfile.supports_verbosity and requestBodyTable.verbosity == nil then

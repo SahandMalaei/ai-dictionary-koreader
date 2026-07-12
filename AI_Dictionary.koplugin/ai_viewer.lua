@@ -82,7 +82,7 @@ local DEFAULT_BOTTOM_SHEET_BODY_LINES = 12
 local DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE = 0.95
 local DEFAULT_BOTTOM_SHEET_EDGE_PADDING = Screen:scaleBySize(12)
 local DEFAULT_BOTTOM_SHEET_SELECTION_PADDING = Screen:scaleBySize(5)
-local DEFAULT_ROUNDEDNESS_SIZE = Screen:scaleBySize(10)
+local DEFAULT_ROUNDEDNESS_SIZE = Screen:scaleBySize(0)
 local DEFAULT_BUTTON_ROUNDEDNESS_SIZE = 0
 
 local function scale_size(value, scale, minimum)
