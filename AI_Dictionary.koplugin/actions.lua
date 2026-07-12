@@ -27,7 +27,7 @@ function Actions.register(plugin)
           "This is the context where it appears: '...{context}...'\n" ..
           "Use web search economically to identify or verify the book, character, place, term, reference, or allusion if that helps. " ..
           "Explain it and dive deep in relation to the book, and help me understand it better (like Amazon Kindle's X-Ray, but more concise). " ..
-          "No spoilers if it's fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep your explanation brief (under 100 words, ONLY ONE PARAGRAPH), and ask no questions at the end.",
+          "No spoilers if it's fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep your explanation brief (under 90 words, ONLY ONE PARAGRAPH), and ask no questions at the end.",
           AI_EXPLAIN_WEB_SEARCH_PARAMETERS)
       end,
     }
