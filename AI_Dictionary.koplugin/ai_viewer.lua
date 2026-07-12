@@ -177,6 +177,8 @@ local AIViewer = InputContainer:extend {
 
   benedict = nil,
   stream_cancel = nil,
+  auxiliary_cancel = nil,
+  images = nil,
   user_scroll_enabled = true,
 
   bottom_sheet = nil,
@@ -471,6 +473,27 @@ function AIViewer:init()
     end
   end
 
+  -- TextBoxWidget may shrink an oversized image descriptor without shrinking
+  -- its blitbuffer. Reconcile fixed boxes before layout so the bitmap can never
+  -- paint outside the square that the text wraps around.
+  if self.images then
+    for _, image in ipairs(self.images) do
+      if image.fixed_box_size and image.bb then
+        local box_size = math.max(1, math.min(
+          image.fixed_box_size,
+          math.floor(inner_width / 2),
+          math.floor(body_height / 2)
+        ))
+        image.width = box_size
+        image.height = box_size
+        if image.bb:getWidth() ~= box_size or image.bb:getHeight() ~= box_size then
+          local RenderImage = require("ui/renderimage")
+          image.bb = RenderImage:scaleBlitBuffer(image.bb, box_size, box_size)
+        end
+      end
+    end
+  end
+
   if Device:isTouchDevice() then
     local range = self.region
     self.ges_events = {
@@ -524,6 +547,7 @@ function AIViewer:init()
 
   self.scroll_text_w = ScrollTextWidget:new {
     text = self.text,
+    images = self.images,
     face = self.text_face,
     fgcolor = self.fgcolor,
     width = inner_width,
@@ -722,6 +746,10 @@ function AIViewer:onClose()
     self.stream_cancel()
     self.stream_cancel = nil
   end
+  if self.auxiliary_cancel then
+    self.auxiliary_cancel()
+    self.auxiliary_cancel = nil
+  end
   UIManager:close(self)
   if self.close_callback then
     self.close_callback()
@@ -856,6 +884,8 @@ function AIViewer:update(new_text, new_header_text, options)
     user_scroll_enabled = options.user_scroll_enabled ~= nil and options.user_scroll_enabled or self.user_scroll_enabled,
     close_callback = self.close_callback,
     stream_cancel = self.stream_cancel,
+    auxiliary_cancel = self.auxiliary_cancel,
+    images = self.images,
     header_face = self.header_face,
     header_spacing = self.header_spacing,
     bottom_sheet = self.bottom_sheet,
