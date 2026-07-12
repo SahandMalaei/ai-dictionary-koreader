@@ -8,6 +8,8 @@ local CONFIGURATION = {
     voice_model = "gpt-4o-mini-tts",
     voice_voice = "nova",
 
+    output_language = "English",
+
     images = true,
 
     update_check = true,

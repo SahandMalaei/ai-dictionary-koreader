@@ -35,13 +35,13 @@ function Actions.register(plugin)
 
   plugin.ui.highlight:addToHighlightDialog("aidictionary_2", function(reader_highlight_instance)
     return {
-      text = _("AI English Simplify"),
+      text = _("AI Simplify"),
       enabled = Device:hasClipboard(),
       callback = function()
-        plugin:Query(reader_highlight_instance, "AI English Simplify", false,
-          "I'm an advanced learner of English. I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
+        plugin:Query(reader_highlight_instance, "AI Simplify", false,
+          "I'm an advanced language learner. I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
           "This is the context where it appears: '...{context}...'\n" ..
-          "Rewrite it in simpler, more understandable English. Brevity is important.")
+          "Rewrite and simplify it to make it more understandable. Brevity is also important.")
       end,
     }
   end)

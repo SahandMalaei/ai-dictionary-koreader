@@ -4,6 +4,7 @@ ConfigurationManager.CORE_CONFIGURATION_KEYS = {
   "api_key",
   "text_endpoint",
   "text_model",
+  "output_language",
   "voice_endpoint",
   "voice_model",
   "voice_voice",
@@ -16,6 +17,7 @@ ConfigurationManager.CORE_CONFIGURATION_KEY_SET = {
   api_key = true,
   text_endpoint = true,
   text_model = true,
+  output_language = true,
   voice_endpoint = true,
   voice_model = true,
   voice_voice = true,
@@ -41,6 +43,7 @@ ConfigurationManager.CONFIGURATION_LABELS = {
   api_key = "API key",
   text_endpoint = "Text endpoint URL",
   text_model = "Text model",
+  output_language = "Output language",
   additional_parameters = "Additional parameters",
   voice_endpoint = "Voice endpoint URL",
   voice_model = "Voice model",
@@ -72,6 +75,14 @@ function ConfigurationManager.normalize(configuration)
   if configuration.images == nil then
     configuration.images = true
   end
+  if type(configuration.output_language) ~= "string"
+      or configuration.output_language:match("^%s*$")
+      or configuration.output_language:find("[%c\r\n]")
+      or #configuration.output_language > 60 then
+    configuration.output_language = "English"
+  else
+    configuration.output_language = configuration.output_language:match("^%s*(.-)%s*$")
+  end
   return configuration
 end
 
@@ -85,6 +96,7 @@ function ConfigurationManager.load()
     api_key = "",
     text_endpoint = "https://api.openai.com/v1/chat/completions",
     text_model = "gpt-5-nano",
+    output_language = "English",
     images = true,
     update_check = true,
   })
@@ -103,6 +115,15 @@ end
 function ConfigurationManager.is_images_enabled()
   local configuration = ConfigurationManager.load()
   return not configuration or configuration.images ~= false
+end
+
+function ConfigurationManager.get_output_language()
+  return ConfigurationManager.load().output_language or "English"
+end
+
+function ConfigurationManager.is_english_output()
+  local language = ConfigurationManager.get_output_language():lower()
+  return language == "english" or language == "en" or language == "en-us" or language == "en-gb"
 end
 
 local function is_array(value)

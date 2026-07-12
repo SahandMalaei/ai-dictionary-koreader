@@ -16,6 +16,14 @@ local STREAM_UPDATE_TOKEN_INTERVAL = 10
 local OFFLINE_WAIT_MESSAGE = "You are offline. AI lookup requires an active internet connection."
 local ONLINE_WAIT_MESSAGE = "Getting the answer..."
 
+local function output_language_suffix()
+  if Config.is_english_output() then return "" end
+  local language = Config.get_output_language()
+  return "\n\nWrite the user-visible answer in " .. language .. ". " ..
+      "Keep machine-readable metadata, the exact English Wikipedia article title, formatting markers, " ..
+      "and required dictionary section labels exactly as specified. Translate only the user-visible content."
+end
+
 local state = {
   last_query = "",
   last_preface_with_selection = false,
@@ -289,6 +297,9 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   state.last_query = resolve_query(query, context.replacements)
   if image_protocol then
     state.last_query = state.last_query .. WikipediaImage.prompt_suffix
+  end
+  if is_dictionary_query or is_explain_query then
+    state.last_query = state.last_query .. output_language_suffix()
   end
   state.last_preface_with_selection = preface_with_selection
   state.last_display_selection = context.display_selection
