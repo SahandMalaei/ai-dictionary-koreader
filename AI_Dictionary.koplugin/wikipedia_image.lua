@@ -8,8 +8,8 @@ local socket_url = require("socket.url")
 local WikipediaImage = {}
 
 local REQUEST_TIMEOUT_SECONDS = 15
-local MAX_IMAGE_BYTES = 8 * 2048 * 2048
-local BOX_SIZE = 300
+local MAX_IMAGE_BYTES = 8 * 4096 * 4096
+local BOX_SIZE = 250
 local BORDER_SIZE = 1
 local METADATA_OPEN = "<aidictionary-wikipedia>"
 local METADATA_CLOSE = "</aidictionary-wikipedia>"
@@ -17,7 +17,7 @@ local METADATA_CLOSE = "</aidictionary-wikipedia>"
 WikipediaImage.prompt_suffix = [[
 
 Before the user-visible answer, output exactly one metadata line in this form:
-<aidictionary-wikipedia>English Wikipedia-style unambiguous FULL title plus disambiguation if necessary (e.g. (Video Game)) or None</aidictionary-wikipedia>
+<aidictionary-wikipedia>English Wikipedia-style FULL title plus disambiguation hint if necessary (e.g. (Video Game)) or None</aidictionary-wikipedia>
 Choose a title only when the selected text can be represented accurately by one specific subject that definitely has an English Wikipedia article with a representative lead image (strong candidates: famous people, tools, companies, games, movies, books, food items, animals and vegetables). Otherwise use None. Output this metadata line first, then follow all the original answer instructions exactly.]]
 
 https.TIMEOUT = REQUEST_TIMEOUT_SECONDS
@@ -129,7 +129,7 @@ end
 
 local function find_thumbnail(title, cancelled)
   local api_url = "https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2" ..
-      "&redirects=1&prop=pageimages&piprop=thumbnail&pithumbsize=800&titles=" .. socket_url.escape(title)
+      "&redirects=1&prop=pageimages&piprop=thumbnail&pilicense=any&pithumbsize=800&titles=" .. socket_url.escape(title)
   local body = get(api_url, "application/json", cancelled)
   if not body then
     return nil

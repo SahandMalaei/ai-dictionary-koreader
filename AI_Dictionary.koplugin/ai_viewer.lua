@@ -75,14 +75,14 @@ function SheetContainer:contentRange()
 end
 
 -- Change this value to adjust how many body text lines the bottom sheet reserves.
-local DEFAULT_BOTTOM_SHEET_BODY_LINES = 11
+local DEFAULT_BOTTOM_SHEET_BODY_LINES = 12
 
 -- Change this value to adjust the bottom panel's top button row height later.
 -- 0.75 means 75% of the normal KOReader ButtonTable text/content height.
 local DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE = 0.95
 local DEFAULT_BOTTOM_SHEET_EDGE_PADDING = Screen:scaleBySize(12)
 local DEFAULT_BOTTOM_SHEET_SELECTION_PADDING = Screen:scaleBySize(5)
-local DEFAULT_ROUNDEDNESS_SIZE = Screen:scaleBySize(15)
+local DEFAULT_ROUNDEDNESS_SIZE = Screen:scaleBySize(10)
 local DEFAULT_BUTTON_ROUNDEDNESS_SIZE = 0
 
 local function scale_size(value, scale, minimum)
