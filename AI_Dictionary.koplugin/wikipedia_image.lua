@@ -11,6 +11,8 @@ local REQUEST_TIMEOUT_SECONDS = 15
 local MAX_IMAGE_BYTES = 8 * 4096 * 4096
 local BOX_SIZE = 250
 local BORDER_SIZE = 1
+local TEXT_PADDING_LEFT = 8
+local BUFFER_WIDTH = BOX_SIZE + TEXT_PADDING_LEFT
 local METADATA_OPEN = "<aidictionary-wikipedia>"
 local METADATA_CLOSE = "</aidictionary-wikipedia>"
 
@@ -25,10 +27,10 @@ http.TIMEOUT = REQUEST_TIMEOUT_SECONDS
 
 local function paint_outline(bb)
   local color = Blitbuffer.COLOR_DARK_GRAY
-  bb:paintRect(0, 0, BOX_SIZE, BORDER_SIZE, color)
-  bb:paintRect(0, BOX_SIZE - BORDER_SIZE, BOX_SIZE, BORDER_SIZE, color)
-  bb:paintRect(0, 0, BORDER_SIZE, BOX_SIZE, color)
-  bb:paintRect(BOX_SIZE - BORDER_SIZE, 0, BORDER_SIZE, BOX_SIZE, color)
+  bb:paintRect(TEXT_PADDING_LEFT, 0, BOX_SIZE, BORDER_SIZE, color)
+  bb:paintRect(TEXT_PADDING_LEFT, BOX_SIZE - BORDER_SIZE, BOX_SIZE, BORDER_SIZE, color)
+  bb:paintRect(TEXT_PADDING_LEFT, 0, BORDER_SIZE, BOX_SIZE, color)
+  bb:paintRect(BUFFER_WIDTH - BORDER_SIZE, 0, BORDER_SIZE, BOX_SIZE, color)
 end
 
 local function request_client(url)
@@ -114,17 +116,26 @@ function WikipediaImage.strip_metadata_fallback(response)
   return response:sub(1, start_at - 1):gsub("%s+$", "")
 end
 
-function WikipediaImage.new_placeholder(title)
-  local bb = Blitbuffer.new(BOX_SIZE, BOX_SIZE, Blitbuffer.TYPE_BBRGB32)
+function WikipediaImage.new_placeholder(title, show_outline)
+  local bb = Blitbuffer.new(BUFFER_WIDTH, BOX_SIZE, Blitbuffer.TYPE_BBRGB32)
   bb:fill(Blitbuffer.COLOR_WHITE)
-  paint_outline(bb)
+  if show_outline ~= false then
+    paint_outline(bb)
+  end
   return {
-    width = BOX_SIZE,
+    width = BUFFER_WIDTH,
     height = BOX_SIZE,
     fixed_box_size = BOX_SIZE,
+    text_padding_left = TEXT_PADDING_LEFT,
     bb = bb,
     title = title,
   }
+end
+
+function WikipediaImage.clear_placeholder(image)
+  if not image or not image.bb then return end
+  image.bb:fill(Blitbuffer.COLOR_WHITE)
+  image.title = nil
 end
 
 local function find_thumbnail(title, cancelled)
@@ -169,11 +180,11 @@ function WikipediaImage.fetch(title_answer, cancelled)
   local image_width = math.max(1, math.floor(source_width * scale + 0.5))
   local image_height = math.max(1, math.floor(source_height * scale + 0.5))
   local scaled_bb = RenderImage:scaleBlitBuffer(source_bb, image_width, image_height)
-  local box_bb = Blitbuffer.new(BOX_SIZE, BOX_SIZE, Blitbuffer.TYPE_BBRGB32)
+  local box_bb = Blitbuffer.new(BUFFER_WIDTH, BOX_SIZE, Blitbuffer.TYPE_BBRGB32)
   box_bb:fill(Blitbuffer.COLOR_WHITE)
   box_bb:blitFrom(
     scaled_bb,
-    BORDER_SIZE + math.floor((inner_size - image_width) / 2),
+    TEXT_PADDING_LEFT + BORDER_SIZE + math.floor((inner_size - image_width) / 2),
     BORDER_SIZE + math.floor((inner_size - image_height) / 2),
     0,
     0,
@@ -186,14 +197,15 @@ function WikipediaImage.fetch(title_answer, cancelled)
   -- TextBoxWidget reserves space from image.width/image.height, but paints the
   -- complete image.bb. Keep both dimensions tied to the actual final buffer so
   -- a decoder/scaler returning an unexpected size can never spill into text.
-  if box_bb:getWidth() ~= BOX_SIZE or box_bb:getHeight() ~= BOX_SIZE then
-    box_bb = RenderImage:scaleBlitBuffer(box_bb, BOX_SIZE, BOX_SIZE)
+  if box_bb:getWidth() ~= BUFFER_WIDTH or box_bb:getHeight() ~= BOX_SIZE then
+    box_bb = RenderImage:scaleBlitBuffer(box_bb, BUFFER_WIDTH, BOX_SIZE)
   end
 
   return {
     width = box_bb:getWidth(),
     height = box_bb:getHeight(),
     fixed_box_size = BOX_SIZE,
+    text_padding_left = TEXT_PADDING_LEFT,
     bb = box_bb,
     title = title,
   }

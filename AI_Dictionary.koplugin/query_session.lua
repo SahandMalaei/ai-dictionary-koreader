@@ -74,21 +74,16 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
     repaint_now()
   end
 
-  local function remove_image_box()
+  local function keep_empty_image_box()
     if not session or session.cancelled or not session.current_viewer then return end
-    local images = session.current_viewer.images
-    session.current_viewer.images = nil
+    WikipediaImage.clear_placeholder(session.image_descriptor)
     refresh_current_viewer()
-    local bb = images and images[1] and images[1].bb
-    if bb and bb.free then bb:free() end
-    if session.image_descriptor then session.image_descriptor.bb = nil end
-    session.image_descriptor = nil
   end
 
   local function schedule_wikipedia_image(title)
     if not session or session.image_lookup_scheduled or not title then return end
     session.image_lookup_scheduled = true
-    local placeholder = WikipediaImage.new_placeholder(title)
+    local placeholder = WikipediaImage.new_placeholder(title, false)
     session.image_descriptor = placeholder
     session.current_viewer.images = { placeholder }
     refresh_current_viewer()
@@ -102,7 +97,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
         return
       end
       if not image then
-        remove_image_box()
+        keep_empty_image_box()
         return
       end
       local old_bb = placeholder.bb

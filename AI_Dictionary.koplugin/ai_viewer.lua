@@ -479,16 +479,18 @@ function AIViewer:init()
   if self.images then
     for _, image in ipairs(self.images) do
       if image.fixed_box_size and image.bb then
+        local image_padding_left = image.text_padding_left or 0
         local box_size = math.max(1, math.min(
           image.fixed_box_size,
-          math.floor(inner_width / 2),
+          math.max(1, math.floor(inner_width / 2) - image_padding_left),
           math.floor(body_height / 2)
         ))
-        image.width = box_size
+        local image_width = box_size + image_padding_left
+        image.width = image_width
         image.height = box_size
-        if image.bb:getWidth() ~= box_size or image.bb:getHeight() ~= box_size then
+        if image.bb:getWidth() ~= image_width or image.bb:getHeight() ~= box_size then
           local RenderImage = require("ui/renderimage")
-          image.bb = RenderImage:scaleBlitBuffer(image.bb, box_size, box_size)
+          image.bb = RenderImage:scaleBlitBuffer(image.bb, image_width, box_size)
         end
       end
     end
