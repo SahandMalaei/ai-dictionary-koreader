@@ -83,7 +83,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
   local function schedule_wikipedia_image(title)
     if not session or session.image_lookup_scheduled or not title then return end
     session.image_lookup_scheduled = true
-    local placeholder = WikipediaImage.new_placeholder(title, false)
+    local placeholder = WikipediaImage.new_placeholder(title, true)
     session.image_descriptor = placeholder
     session.current_viewer.images = { placeholder }
     refresh_current_viewer()
@@ -243,7 +243,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   local context = Context.build_query_context(plugin, reader_highlight_instance, dialog_title)
   local is_dictionary_query = dialog_title == "AI Dictionary"
   local is_explain_query = dialog_title == "AI Explain"
-  local image_protocol = is_dictionary_query or is_explain_query
+  local image_protocol = (is_dictionary_query or is_explain_query) and Config.is_images_enabled()
   local session = {
     cancelled = false,
     image_protocol = image_protocol,

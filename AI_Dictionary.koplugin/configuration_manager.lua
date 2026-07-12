@@ -7,6 +7,7 @@ ConfigurationManager.CORE_CONFIGURATION_KEYS = {
   "voice_endpoint",
   "voice_model",
   "voice_voice",
+  "images",
   "update_check",
   "debug_mode",
 }
@@ -18,12 +19,14 @@ ConfigurationManager.CORE_CONFIGURATION_KEY_SET = {
   voice_endpoint = true,
   voice_model = true,
   voice_voice = true,
+  images = true,
   debug_mode = true,
   update_check = true,
 }
 
 ConfigurationManager.BOOLEAN_CONFIGURATION_KEYS = {
   debug_mode = true,
+  images = true,
   update_check = true,
 }
 
@@ -43,6 +46,7 @@ ConfigurationManager.CONFIGURATION_LABELS = {
   voice_model = "Voice model",
   voice_voice = "Voice",
   tts_speed = "Voice speed",
+  images = "Show images",
   debug_mode = "Debug mode",
   update_check = "Check for updates",
 }
@@ -65,6 +69,9 @@ function ConfigurationManager.normalize(configuration)
   if configuration.update_check == nil then
     configuration.update_check = true
   end
+  if configuration.images == nil then
+    configuration.images = true
+  end
   return configuration
 end
 
@@ -78,6 +85,7 @@ function ConfigurationManager.load()
     api_key = "",
     text_endpoint = "https://api.openai.com/v1/chat/completions",
     text_model = "gpt-5-nano",
+    images = true,
     update_check = true,
   })
 end
@@ -90,6 +98,11 @@ end
 function ConfigurationManager.is_update_check_enabled()
   local configuration = ConfigurationManager.load()
   return not configuration or configuration.update_check ~= false
+end
+
+function ConfigurationManager.is_images_enabled()
+  local configuration = ConfigurationManager.load()
+  return not configuration or configuration.images ~= false
 end
 
 local function is_array(value)
