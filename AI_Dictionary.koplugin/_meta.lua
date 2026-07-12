@@ -2,5 +2,5 @@ return {
     name = "aidictionary",
     fullname = "AI Dictionary",
     description = "AI dictionary and explainer",
-    version = 2.5,
+    version = 2.6,
 }
