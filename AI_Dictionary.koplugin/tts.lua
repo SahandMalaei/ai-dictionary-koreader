@@ -2,6 +2,7 @@ local Device = require("device")
 local UIManager = require("ui/uimanager")
 
 local AudioPlayer = require("audio_player")
+local ErrorBoundary = require("error_boundary")
 local Pronunciation = require("pronunciation")
 
 local TTS = {}
@@ -51,7 +52,7 @@ function TTS.start_request(tts_request, play_when_ready)
   tts_request.status = "pending"
   tts_request.in_progress = true
 
-  UIManager:scheduleIn(0.01, function()
+  UIManager:scheduleIn(0.01, ErrorBoundary.wrap("TTS synthesis", function()
     local audio_path, err = Pronunciation.synthesize(tts_request.text, tts_request.plugin_dir, tts_request.context)
     tts_request.in_progress = false
     if audio_path then
@@ -68,7 +69,7 @@ function TTS.start_request(tts_request, play_when_ready)
       tts_request.play_when_ready = false
       print("AI Dictionary TTS error: " .. tostring(err))
     end
-  end)
+  end))
 end
 
 function TTS.mark_text_query_finished(tts_request)

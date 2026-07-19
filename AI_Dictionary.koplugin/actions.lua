@@ -1,6 +1,8 @@
 local Device = require("device")
 local _ = require("gettext")
 
+local ErrorBoundary = require("error_boundary")
+
 local Actions = {}
 
 local AI_EXPLAIN_WEB_SEARCH_PARAMETERS = {
@@ -17,7 +19,7 @@ local AI_EXPLAIN_WEB_SEARCH_PARAMETERS = {
 }
 
 function Actions.register(plugin)
-  plugin.ui.highlight:addToHighlightDialog("aidictionary_1", function(reader_highlight_instance)
+  plugin.ui.highlight:addToHighlightDialog("aidictionary_1", ErrorBoundary.wrap("build AI Explain action", function(reader_highlight_instance)
     return {
       text = _("AI Explain"),
       enabled = Device:hasClipboard(),
@@ -31,9 +33,9 @@ function Actions.register(plugin)
           AI_EXPLAIN_WEB_SEARCH_PARAMETERS)
       end,
     }
-  end)
+  end))
 
-  plugin.ui.highlight:addToHighlightDialog("aidictionary_2", function(reader_highlight_instance)
+  plugin.ui.highlight:addToHighlightDialog("aidictionary_2", ErrorBoundary.wrap("build AI Simplify action", function(reader_highlight_instance)
     return {
       text = _("AI Simplify"),
       enabled = Device:hasClipboard(),
@@ -44,9 +46,9 @@ function Actions.register(plugin)
           "Rewrite and simplify it to make it more understandable. Brevity is also important.")
       end,
     }
-  end)
+  end))
 
-  plugin.ui.highlight:addToHighlightDialog("aidictionary_3", function(reader_highlight_instance)
+  plugin.ui.highlight:addToHighlightDialog("aidictionary_3", ErrorBoundary.wrap("build AI Dictionary action", function(reader_highlight_instance)
     return {
       text = _("AI Dictionary"),
       enabled = Device:hasClipboard(),
@@ -67,7 +69,7 @@ function Actions.register(plugin)
           "(Pay close attention to the number of line breaks in the formatting of the response)")
       end,
     }
-  end)
+  end))
 end
 
 return Actions

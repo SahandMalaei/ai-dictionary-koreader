@@ -3,6 +3,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 
 local AIViewer = require("ai_viewer")
+local ErrorBoundary = require("error_boundary")
 local LookupsReport = require("lookups_report")
 local QuerySession = require("query_session")
 
@@ -28,7 +29,7 @@ function LookupsReportUI.show_request_dialog(plugin, selected_index)
           text = "Timeframe: " .. timeframe.label,
           callback = function()
             UIManager:close(report_dialog)
-            LookupsReportUI.show_timeframe_dialog(plugin, selected_index)
+            plugin:showLookupsReportTimeframeDialog(selected_index)
           end,
         },
       },
@@ -37,7 +38,7 @@ function LookupsReportUI.show_request_dialog(plugin, selected_index)
           text = "Generate Report",
           callback = function()
             UIManager:close(report_dialog)
-            LookupsReportUI.generate(plugin, timeframe)
+            plugin:generateLookupsReport(timeframe)
           end,
         },
       },
@@ -57,7 +58,7 @@ function LookupsReportUI.show_timeframe_dialog(plugin, selected_index)
         text = (index == selected_index and "* " or "") .. timeframe.label,
         callback = function()
           UIManager:close(selector_dialog)
-          LookupsReportUI.show_request_dialog(plugin, index)
+          plugin:showLookupsReportRequestDialog(index)
         end,
       },
     })
@@ -87,9 +88,9 @@ function LookupsReportUI.generate(plugin, timeframe)
 
   UIManager:show(report_viewer)
 
-  UIManager:scheduleIn(0.01, function()
+  UIManager:scheduleIn(0.01, ErrorBoundary.wrap("start lookups report", function()
     QuerySession.start_report(report_viewer, LookupsReport.build_prompt(entries, timeframe))
-  end)
+  end))
 end
 
 return LookupsReportUI

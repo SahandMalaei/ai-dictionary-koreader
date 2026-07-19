@@ -10,6 +10,8 @@ local lfs = require("libs/libkoreader-lfs")
 local ltn12 = require("ltn12")
 local util = require("util")
 
+local ErrorBoundary = require("error_boundary")
+
 local REQUEST_TIMEOUT_SECONDS = 10
 local REPO_OWNER = "SahandMalaei"
 local REPO_NAME = "ai-dictionary-koreader"
@@ -330,7 +332,7 @@ function Updater:checkOnStartup()
     return
   end
 
-  UIManager:scheduleIn(2, function()
+  UIManager:scheduleIn(2, ErrorBoundary.wrap("startup update check", function()
     local release, err = get_latest_release()
     if not release then
       return
@@ -343,7 +345,7 @@ function Updater:checkOnStartup()
     end
 
     self:promptForUpdate(current_version, latest_version, release.tag_name)
-  end)
+  end))
 end
 
 function Updater:promptForUpdate(current_version, latest_version, tag_name)
@@ -351,17 +353,17 @@ function Updater:promptForUpdate(current_version, latest_version, tag_name)
     text = "AI Dictionary " .. latest_version .. " is available.\n\nInstalled version: "
         .. tostring(current_version) .. "\n\nUpdate now?",
     ok_text = "Update",
-    ok_callback = function()
+    ok_callback = ErrorBoundary.wrap("start plugin update", function()
       show_message("Updating AI Dictionary...", 2)
-      UIManager:scheduleIn(0.1, function()
+      UIManager:scheduleIn(0.1, ErrorBoundary.wrap("plugin update", function()
         local ok, err = self:updateToTag(tag_name)
         if ok then
           self:showRestartDialog()
         else
           show_message("AI Dictionary update failed:\n" .. tostring(err), 8)
         end
-      end)
-    end,
+      end))
+    end),
   })
 end
 

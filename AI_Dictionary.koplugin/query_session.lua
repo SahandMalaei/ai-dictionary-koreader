@@ -5,6 +5,7 @@ local AIViewer = require("ai_viewer")
 local AnswerFormatter = require("answer_formatter")
 local Context = require("context")
 local Config = require("configuration_manager")
+local ErrorBoundary = require("error_boundary")
 local TTS = require("tts")
 local queryAI = require("ai_query")
 local save_lookup_entry = require("lookups_log")
@@ -96,7 +97,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
     session.current_viewer.images = { placeholder }
     refresh_current_viewer()
 
-    session.image_lookup_action = function()
+    session.image_lookup_action = ErrorBoundary.wrap("Wikipedia image lookup", function()
       session.image_lookup_action = nil
       if session.cancelled then return end
       local image = WikipediaImage.fetch(title, function() return session.cancelled end)
@@ -120,7 +121,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       placeholder.title = image.title
       refresh_current_viewer()
       if old_bb and old_bb.free then old_bb:free() end
-    end
+    end)
     UIManager:scheduleIn(0, session.image_lookup_action)
   end
 
@@ -268,20 +269,20 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     header_text = is_dictionary_query and context.display_selection or nil,
     onAskQuestion = nil,
     onPronunciation = tts_request and function()
-      TTS.play(tts_request)
+      plugin:playDictionaryPronunciation(tts_request)
     end or nil,
     benedict = plugin,
     user_scroll_enabled = not NetworkMgr:isOnline(),
     bottom_sheet = true,
     bottom_sheet_position = context.viewer_position,
     bottom_sheet_selection_bounds = context.selection_bounds,
-    close_callback = function()
+    close_callback = ErrorBoundary.wrap("close lookup session", function()
       session.cancelled = true
       close_selection_highlight(ui)
-    end,
+    end),
   }
   session.current_viewer = chatgpt_viewer
-  chatgpt_viewer.auxiliary_cancel = function()
+  chatgpt_viewer.auxiliary_cancel = ErrorBoundary.wrap("cancel lookup session", function()
     session.cancelled = true
     if session.image_lookup_action then UIManager:unschedule(session.image_lookup_action) end
     local bb = session.image_descriptor and session.image_descriptor.bb
@@ -289,7 +290,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       bb:free()
       session.image_descriptor.bb = nil
     end
-  end
+  end)
 
   close_selection_highlight(ui, true)
   UIManager:show(chatgpt_viewer)
@@ -312,7 +313,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     return
   end
 
-  UIManager:scheduleIn(0.01, function()
+  UIManager:scheduleIn(0.01, ErrorBoundary.wrap("start query stream", function()
     local message_history = {
       {
         role = "user",
@@ -329,7 +330,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
         TTS.mark_text_query_finished(tts_request)
       end
     end, Config.is_debug_mode_enabled() and state.last_query or nil, session)
-  end)
+  end))
 end
 
 function QuerySession.start_report(report_viewer, report_prompt)
@@ -365,7 +366,7 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
     current_viewer = updated_viewer,
     no_image_placeholder_path = plugin.path .. "/resources/no-image-placeholder.jpg",
   }
-  updated_viewer.auxiliary_cancel = function()
+  updated_viewer.auxiliary_cancel = ErrorBoundary.wrap("cancel regenerated session", function()
     session.cancelled = true
     if session.image_lookup_action then UIManager:unschedule(session.image_lookup_action) end
     local bb = session.image_descriptor and session.image_descriptor.bb
@@ -373,13 +374,13 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
       bb:free()
       session.image_descriptor.bb = nil
     end
-  end
+  end)
 
   if not online then
     return
   end
 
-  UIManager:scheduleIn(0.01, function()
+  UIManager:scheduleIn(0.01, ErrorBoundary.wrap("start regenerated query stream", function()
     local message_history = {
       {
         role = "user",
@@ -403,7 +404,7 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
         session
       )
     end
-  end)
+  end))
 end
 
 return QuerySession

@@ -28,6 +28,7 @@ local TextBoxWidget = require("ui/widget/textboxwidget")
 local Size = require("ui/size")
 local TitleBar = require("ui/widget/titlebar")
 local UIManager = require("ui/uimanager")
+local ErrorBoundary = require("error_boundary")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
@@ -754,19 +755,21 @@ function AIViewer:onMultiSwipe(arg, ges_ev)
 end
 
 function AIViewer:onClose()
-  if self.stream_cancel then
-    self.stream_cancel()
-    self.stream_cancel = nil
-  end
-  if self.auxiliary_cancel then
-    self.auxiliary_cancel()
-    self.auxiliary_cancel = nil
-  end
-  UIManager:close(self)
-  if self.close_callback then
-    self.close_callback()
-  end
-  return true
+  return ErrorBoundary.call("close viewer", function()
+    if self.stream_cancel then
+      self.stream_cancel()
+      self.stream_cancel = nil
+    end
+    if self.auxiliary_cancel then
+      self.auxiliary_cancel()
+      self.auxiliary_cancel = nil
+    end
+    UIManager:close(self)
+    if self.close_callback then
+      self.close_callback()
+    end
+    return true
+  end)
 end
 
 function AIViewer:Regenerate()
