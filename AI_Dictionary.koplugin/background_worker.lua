@@ -108,9 +108,7 @@ function BackgroundWorker.start(task, callbacks)
   end
 
   local poll
-  poll = function()
-    if not active then return end
-    buffer = buffer .. read_available(read_fd)
+  local function process_frames()
     while #buffer >= 8 do
       local frame_size = tonumber(buffer:sub(1, 8), 16)
       if not frame_size or frame_size < 1 then
@@ -119,9 +117,9 @@ function BackgroundWorker.start(task, callbacks)
         completed = true
         FFIUtil.terminateSubProcess(pid)
         finish()
-        return
+        return false
       end
-      if #buffer < 8 + frame_size then break end
+      if #buffer < 8 + frame_size then return true end
       local frame = buffer:sub(9, 8 + frame_size)
       buffer = buffer:sub(9 + frame_size)
       local kind = frame:sub(1, 1)
@@ -135,10 +133,28 @@ function BackgroundWorker.start(task, callbacks)
         completed = true
         invoke("background worker error callback", callbacks.on_error, payload)
       end
-      if not active then return end
+      if not active then return false end
     end
+    return true
+  end
 
-    if FFIUtil.isSubProcessDone(pid) then
+  poll = function()
+    if not active then return end
+    buffer = buffer .. read_available(read_fd)
+    if not process_frames() then return end
+
+    local subprocess_done = FFIUtil.isSubProcessDone(pid)
+    if subprocess_done then
+      -- The child may have written more data after the FIONREAD snapshot
+      -- above but before waitpid observed its exit. Once it has exited, drain
+      -- the pipe completely before closing it so large final frames cannot be
+      -- truncated.
+      while true do
+        local trailing = read_available(read_fd)
+        if trailing == "" then break end
+        buffer = buffer .. trailing
+      end
+      if not process_frames() then return end
       finish()
     else
       UIManager:scheduleIn(POLL_INTERVAL_SECONDS, poll)

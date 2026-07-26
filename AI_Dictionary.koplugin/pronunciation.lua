@@ -82,6 +82,31 @@ local function write_binary_file(path, data)
   return true
 end
 
+function Pronunciation.create_audio_path(plugin_dir, response_format)
+  plugin_dir = plugin_dir or "AI_Dictionary.koplugin"
+  response_format = response_format or DEFAULT_RESPONSE_FORMAT
+  local audio_dir, audio_path = next_audio_path(plugin_dir, response_format)
+  if not ensure_dir(audio_dir) then
+    return nil, "Could not create Audio directory: " .. tostring(audio_dir)
+  end
+  return audio_path
+end
+
+function Pronunciation.write_audio_file(audio_path, data)
+  if not audio_path or audio_path == "" then
+    return nil, "No destination was provided for TTS audio."
+  end
+  if type(data) ~= "string" or data == "" then
+    return nil, "Voice TTS returned no audio data."
+  end
+  local write_ok, write_err = write_binary_file(audio_path, data)
+  if not write_ok then
+    return nil, "Could not write TTS audio file: " .. tostring(write_err)
+  end
+  logger.warn("AI Dictionary TTS: saved", audio_path, "bytes=", #data)
+  return audio_path
+end
+
 function Pronunciation.cleanup_audio(plugin_dir)
   plugin_dir = plugin_dir or "AI_Dictionary.koplugin"
   local audio_dir = path_join(plugin_dir, "Audio")
@@ -144,7 +169,7 @@ function Pronunciation.is_enabled()
     and has_value(configuration.voice_model)
 end
 
-function Pronunciation.synthesize_data(text, context)
+function Pronunciation.build_request(text, context)
   local configuration = load_configuration()
   local api_key_value = get_api_key(configuration)
   local voice_endpoint = get_voice_endpoint(configuration)
@@ -174,17 +199,31 @@ function Pronunciation.synthesize_data(text, context)
     speed = (configuration and configuration.tts_speed) or 1,
   })
 
+  return {
+    url = voice_endpoint,
+    authorization = "Bearer " .. api_key_value,
+    content_type = "application/json",
+    accept = "audio/mpeg",
+    body = request_body,
+    response_format = response_format,
+  }
+end
+
+function Pronunciation.synthesize_data(text, context)
+  local request, request_err = Pronunciation.build_request(text, context)
+  if not request then return nil, request_err end
+
   local response_body = {}
   local ok, code = https.request {
-    url = voice_endpoint,
+    url = request.url,
     method = "POST",
     headers = {
-      ["Content-Type"] = "application/json",
-      ["Content-Length"] = tostring(#request_body),
-      ["Accept"] = "audio/mpeg",
-      ["Authorization"] = "Bearer " .. api_key_value,
+      ["Content-Type"] = request.content_type,
+      ["Content-Length"] = tostring(#request.body),
+      ["Accept"] = request.accept,
+      ["Authorization"] = request.authorization,
     },
-    source = ltn12.source.string(request_body),
+    source = ltn12.source.string(request.body),
     sink = ltn12.sink.table(response_body),
   }
 
@@ -195,28 +234,13 @@ function Pronunciation.synthesize_data(text, context)
     return nil, err
   end
 
-  return body, response_format
+  return body, request.response_format
 end
 
 function Pronunciation.save_audio(data, plugin_dir, response_format)
-  if type(data) ~= "string" or data == "" then
-    return nil, "Voice TTS returned no audio data."
-  end
-
-  plugin_dir = plugin_dir or "AI_Dictionary.koplugin"
-  response_format = response_format or DEFAULT_RESPONSE_FORMAT
-  local audio_dir, audio_path = next_audio_path(plugin_dir, response_format)
-  if not ensure_dir(audio_dir) then
-    return nil, "Could not create Audio directory: " .. tostring(audio_dir)
-  end
-
-  local write_ok, write_err = write_binary_file(audio_path, body)
-  if not write_ok then
-    return nil, "Could not write TTS audio file: " .. tostring(write_err)
-  end
-
-  logger.warn("AI Dictionary TTS: saved", audio_path, "bytes=", #data)
-  return audio_path
+  local audio_path, path_err = Pronunciation.create_audio_path(plugin_dir, response_format)
+  if not audio_path then return nil, path_err end
+  return Pronunciation.write_audio_file(audio_path, data)
 end
 
 function Pronunciation.synthesize(text, plugin_dir, context)

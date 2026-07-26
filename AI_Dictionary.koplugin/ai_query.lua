@@ -22,6 +22,8 @@ local https = require("ssl.https")
 local http = require("socket.http")
 local ltn12 = require("ltn12")
 local json = require("json")
+local Device = require("device")
+local AndroidHttpWorker = require("android_http_worker")
 local BackgroundWorker = require("background_worker")
 
 local REQUEST_TIMEOUT_SECONDS = 20
@@ -215,6 +217,7 @@ local function queryAI(message_history, opts)
   local response_buffer = ""
   local response_body = {}
   local response_code = nil
+  local android_response_length = 0
 
   local function handlePayload(payload)
     if payload == "[DONE]" then
@@ -236,6 +239,59 @@ local function queryAI(message_history, opts)
     end
   end
 
+  local function handle_message(message)
+    local kind = message:sub(1, 1)
+    local payload = message:sub(2)
+    if kind == "C" then
+      response_body[#response_body + 1] = payload
+      response_buffer = parseSseBuffer(response_buffer .. payload, handlePayload)
+    elseif kind == "R" then
+      response_code = payload
+    end
+  end
+
+  local function finish_request()
+    if (response_code == "wantread" or response_code == "timeout") and accumulated ~= "" then
+      if opts.on_done then opts.on_done(accumulated) end
+    elseif response_code ~= "200" then
+      if opts.on_error then
+        opts.on_error(tostring(response_code) .. "\n\nResponse: " .. table.concat(response_body))
+      end
+    elseif opts.on_done then
+      opts.on_done(accumulated)
+    end
+  end
+
+  if Device.isAndroid and Device:isAndroid() then
+    return AndroidHttpWorker.start({
+      url = api_url,
+      method = "POST",
+      authorization = hasValue(api_key_value) and ("Bearer " .. api_key_value) or "",
+      content_type = "application/json",
+      accept = "text/event-stream",
+      body = requestBody,
+      timeout_seconds = REQUEST_TIMEOUT_SECONDS,
+    }, {
+      on_progress = function(full_response)
+        if #full_response <= android_response_length then return end
+        local chunk = full_response:sub(android_response_length + 1)
+        android_response_length = #full_response
+        handle_message("C" .. chunk)
+      end,
+      on_complete = function(code, full_response)
+        if #full_response > android_response_length then
+          handle_message("C" .. full_response:sub(android_response_length + 1))
+          android_response_length = #full_response
+        end
+        response_code = tostring(code)
+        finish_request()
+      end,
+      on_error = function(err)
+        if opts.on_error then opts.on_error(err) end
+      end,
+    })
+  end
+
   return BackgroundWorker.start(function(emit)
     local request_client = getRequestClient(api_url)
     local _, code = request_client {
@@ -250,27 +306,8 @@ local function queryAI(message_history, opts)
     }
     emit("R" .. tostring(code))
   end, {
-    on_message = function(message)
-      local kind = message:sub(1, 1)
-      local payload = message:sub(2)
-      if kind == "C" then
-        response_body[#response_body + 1] = payload
-        response_buffer = parseSseBuffer(response_buffer .. payload, handlePayload)
-      elseif kind == "R" then
-        response_code = payload
-      end
-    end,
-    on_complete = function()
-      if (response_code == "wantread" or response_code == "timeout") and accumulated ~= "" then
-        if opts.on_done then opts.on_done(accumulated) end
-      elseif response_code ~= "200" then
-        if opts.on_error then
-          opts.on_error(tostring(response_code) .. "\n\nResponse: " .. table.concat(response_body))
-        end
-      elseif opts.on_done then
-        opts.on_done(accumulated)
-      end
-    end,
+    on_message = handle_message,
+    on_complete = finish_request,
     on_error = function(err)
       if opts.on_error then opts.on_error(err) end
     end,

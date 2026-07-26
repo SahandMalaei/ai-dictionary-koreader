@@ -1,7 +1,9 @@
 local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
+local Device = require("device")
 
 local AIViewer = require("ai_viewer")
+local AndroidHttpWorker = require("android_http_worker")
 local AnswerFormatter = require("answer_formatter")
 local BackgroundWorker = require("background_worker")
 local Context = require("context")
@@ -104,6 +106,13 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       session.image_lookup_cancel = nil
       if session.cancelled then return end
       local image = image_data and WikipediaImage.from_data(image_data, title) or nil
+      if not image and session.image_download_path then
+        image = WikipediaImage.from_file(session.image_download_path, title)
+      end
+      if session.image_download_path then
+        os.remove(session.image_download_path)
+        session.image_download_path = nil
+      end
       if not image then
         image = WikipediaImage.from_file(session.no_image_placeholder_path, title)
         if not image then
@@ -123,6 +132,68 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       placeholder.title = image.title
       refresh_current_viewer()
       if old_bb and old_bb.free then old_bb:free() end
+    end
+
+    if Device.isAndroid and Device:isAndroid() then
+      local api_url = WikipediaImage.thumbnail_api_url(title)
+      if not api_url then
+        finish_image_lookup()
+        return
+      end
+      local current_cancel
+      local cancelled = false
+      local function fail_image_lookup()
+        if not cancelled then finish_image_lookup() end
+      end
+      current_cancel = AndroidHttpWorker.start({
+        url = api_url,
+        method = "GET",
+        accept = "application/json",
+        user_agent = "AI-Dictionary-KOReader/experimental-wikipedia-image",
+        timeout_seconds = 15,
+      }, {
+        on_complete = function(code, body)
+          if cancelled or code ~= 200 then
+            fail_image_lookup()
+            return
+          end
+          local image_url = WikipediaImage.parse_thumbnail_response(body)
+          if not image_url then
+            fail_image_lookup()
+            return
+          end
+          session.image_download_path = session.plugin_path .. "/Cache/wikipedia_" ..
+              tostring(os.time()) .. "_" .. tostring(math.random(100000, 999999)) .. ".img"
+          current_cancel = AndroidHttpWorker.start({
+            url = image_url,
+            method = "GET",
+            accept = "image/*",
+            user_agent = "AI-Dictionary-KOReader/experimental-wikipedia-image",
+            output_path = session.image_download_path,
+            timeout_seconds = 15,
+          }, {
+            on_complete = function(image_code)
+              if image_code == 200 then
+                finish_image_lookup()
+              else
+                fail_image_lookup()
+              end
+            end,
+            on_error = fail_image_lookup,
+          })
+        end,
+        on_error = fail_image_lookup,
+      })
+      session.image_lookup_cancel = function()
+        if cancelled then return end
+        cancelled = true
+        if current_cancel then current_cancel() end
+        if session.image_download_path then
+          os.remove(session.image_download_path)
+          session.image_download_path = nil
+        end
+      end
+      return
     end
 
     session.image_lookup_cancel = BackgroundWorker.start(function(emit)
@@ -272,6 +343,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     cancelled = false,
     image_protocol = image_protocol,
     no_image_placeholder_path = plugin.path .. "/resources/no-image-placeholder.jpg",
+    plugin_path = plugin.path,
   }
   local tts_request = nil
   if is_dictionary_query then
@@ -397,6 +469,7 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
     image_protocol = state.last_image_protocol,
     current_viewer = updated_viewer,
     no_image_placeholder_path = plugin.path .. "/resources/no-image-placeholder.jpg",
+    plugin_path = plugin.path,
   }
   updated_viewer.auxiliary_cancel = ErrorBoundary.wrap("cancel regenerated session", function()
     session.cancelled = true
