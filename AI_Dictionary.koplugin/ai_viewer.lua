@@ -206,6 +206,7 @@ local AIViewer = InputContainer:extend {
   onPronunciation = nil,
 
   benedict = nil,
+  tts_request = nil,
   stream_cancel = nil,
   auxiliary_cancel = nil,
   images = nil,
@@ -970,6 +971,7 @@ function AIViewer:update(new_text, new_header_text, options)
     onAskQuestion = self.onAskQuestion,
     onPronunciation = self.onPronunciation,
     benedict = self.benedict,
+    tts_request = self.tts_request,
     user_scroll_enabled = options.user_scroll_enabled ~= nil and options.user_scroll_enabled or self.user_scroll_enabled,
     close_callback = self.close_callback,
     stream_cancel = self.stream_cancel,

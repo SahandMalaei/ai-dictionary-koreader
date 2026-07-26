@@ -145,12 +145,23 @@ function WikipediaImage.clear_placeholder(image)
 end
 
 local function find_thumbnail(title, cancelled)
-  local api_url = "https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2" ..
-      "&redirects=1&prop=pageimages&piprop=thumbnail&pilicense=any&pithumbsize=800&titles=" .. socket_url.escape(title)
+  local api_url = WikipediaImage.thumbnail_api_url(title)
   local body = get(api_url, "application/json", cancelled)
   if not body then
     return nil
   end
+  return WikipediaImage.parse_thumbnail_response(body)
+end
+
+function WikipediaImage.thumbnail_api_url(title_answer)
+  local title = clean_title(title_answer)
+  if not title then return nil end
+  return "https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2" ..
+      "&redirects=1&prop=pageimages&piprop=thumbnail&pilicense=any&pithumbsize=800&titles=" ..
+      socket_url.escape(title)
+end
+
+function WikipediaImage.parse_thumbnail_response(body)
   local ok, result = pcall(json.decode, body)
   local page = ok and result and result.query and result.query.pages and result.query.pages[1]
   return page and not page.missing and page.thumbnail and page.thumbnail.source or nil
@@ -223,16 +234,26 @@ function WikipediaImage.fetch(title_answer, cancelled)
   if not title or cancelled() then
     return nil
   end
-  local image_url = find_thumbnail(title, cancelled)
-  if not image_url or cancelled() then
-    return nil
-  end
-  local data = get(image_url, "image/*", cancelled)
+  local data = WikipediaImage.download(title, cancelled)
   if not data or cancelled() then
     return nil
   end
+  return WikipediaImage.from_data(data, title)
+end
+
+function WikipediaImage.download(title_answer, cancelled)
+  cancelled = cancelled or function() return false end
+  local title = clean_title(title_answer)
+  if not title or cancelled() then return nil end
+  local image_url = find_thumbnail(title, cancelled)
+  if not image_url or cancelled() then return nil end
+  return get(image_url, "image/*", cancelled)
+end
+
+function WikipediaImage.from_data(data, title)
+  if type(data) ~= "string" or data == "" then return nil end
   local ok, source_bb = pcall(RenderImage.renderImageData, RenderImage, data, #data, false)
-  if not ok or not source_bb or cancelled() then
+  if not ok or not source_bb then
     if source_bb and source_bb.free then source_bb:free() end
     return nil
   end

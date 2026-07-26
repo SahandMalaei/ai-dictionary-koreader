@@ -22,6 +22,9 @@ local https = require("ssl.https")
 local http = require("socket.http")
 local ltn12 = require("ltn12")
 local json = require("json")
+local Device = require("device")
+local AndroidHttpWorker = require("android_http_worker")
+local BackgroundWorker = require("background_worker")
 
 local REQUEST_TIMEOUT_SECONDS = 20
 
@@ -212,7 +215,9 @@ local function queryAI(message_history, opts)
   local accumulated = ""
   local token_count = 0
   local response_buffer = ""
-  local cancelled = false
+  local response_body = {}
+  local response_code = nil
+  local android_response_length = 0
 
   local function handlePayload(payload)
     if payload == "[DONE]" then
@@ -234,48 +239,79 @@ local function queryAI(message_history, opts)
     end
   end
 
-  local responseBody = {}
-  local sink = function(chunk)
-    if cancelled then
-      return nil, "cancelled"
+  local function handle_message(message)
+    local kind = message:sub(1, 1)
+    local payload = message:sub(2)
+    if kind == "C" then
+      response_body[#response_body + 1] = payload
+      response_buffer = parseSseBuffer(response_buffer .. payload, handlePayload)
+    elseif kind == "R" then
+      response_code = payload
     end
-    if not chunk then
-      return 1
-    end
-
-    table.insert(responseBody, chunk)
-    response_buffer = parseSseBuffer(response_buffer .. chunk, handlePayload)
-    return 1
   end
 
-  local requestClient = getRequestClient(api_url)
-  local _, code = requestClient {
-    url = api_url,
-    method = "POST",
-    headers = buildHeaders(requestBody, api_key_value),
-    source = ltn12.source.string(requestBody),
-    sink = sink,
-  }
-
-  if cancelled then
-    return function() end
-  end
-
-  if (code == "wantread" or code == "timeout") and accumulated ~= "" then
-    if opts.on_done then
+  local function finish_request()
+    if (response_code == "wantread" or response_code == "timeout") and accumulated ~= "" then
+      if opts.on_done then opts.on_done(accumulated) end
+    elseif response_code ~= "200" then
+      if opts.on_error then
+        opts.on_error(tostring(response_code) .. "\n\nResponse: " .. table.concat(response_body))
+      end
+    elseif opts.on_done then
       opts.on_done(accumulated)
     end
-  elseif tostring(code) ~= "200" then
-    if opts.on_error then
-      opts.on_error(tostring(code) .. "\n\nResponse: " .. table.concat(responseBody))
-    end
-  elseif opts.on_done then
-    opts.on_done(accumulated)
   end
 
-  return function()
-    cancelled = true
+  if Device.isAndroid and Device:isAndroid() then
+    return AndroidHttpWorker.start({
+      url = api_url,
+      method = "POST",
+      authorization = hasValue(api_key_value) and ("Bearer " .. api_key_value) or "",
+      content_type = "application/json",
+      accept = "text/event-stream",
+      body = requestBody,
+      timeout_seconds = REQUEST_TIMEOUT_SECONDS,
+    }, {
+      on_progress = function(full_response)
+        if #full_response <= android_response_length then return end
+        local chunk = full_response:sub(android_response_length + 1)
+        android_response_length = #full_response
+        handle_message("C" .. chunk)
+      end,
+      on_complete = function(code, full_response)
+        if #full_response > android_response_length then
+          handle_message("C" .. full_response:sub(android_response_length + 1))
+          android_response_length = #full_response
+        end
+        response_code = tostring(code)
+        finish_request()
+      end,
+      on_error = function(err)
+        if opts.on_error then opts.on_error(err) end
+      end,
+    })
   end
+
+  return BackgroundWorker.start(function(emit)
+    local request_client = getRequestClient(api_url)
+    local _, code = request_client {
+      url = api_url,
+      method = "POST",
+      headers = buildHeaders(requestBody, api_key_value),
+      source = ltn12.source.string(requestBody),
+      sink = function(chunk)
+        if chunk then emit("C" .. chunk) end
+        return 1
+      end,
+    }
+    emit("R" .. tostring(code))
+  end, {
+    on_message = handle_message,
+    on_complete = finish_request,
+    on_error = function(err)
+      if opts.on_error then opts.on_error(err) end
+    end,
+  })
 end
 
 return queryAI
