@@ -223,16 +223,26 @@ function WikipediaImage.fetch(title_answer, cancelled)
   if not title or cancelled() then
     return nil
   end
-  local image_url = find_thumbnail(title, cancelled)
-  if not image_url or cancelled() then
-    return nil
-  end
-  local data = get(image_url, "image/*", cancelled)
+  local data = WikipediaImage.download(title, cancelled)
   if not data or cancelled() then
     return nil
   end
+  return WikipediaImage.from_data(data, title)
+end
+
+function WikipediaImage.download(title_answer, cancelled)
+  cancelled = cancelled or function() return false end
+  local title = clean_title(title_answer)
+  if not title or cancelled() then return nil end
+  local image_url = find_thumbnail(title, cancelled)
+  if not image_url or cancelled() then return nil end
+  return get(image_url, "image/*", cancelled)
+end
+
+function WikipediaImage.from_data(data, title)
+  if type(data) ~= "string" or data == "" then return nil end
   local ok, source_bb = pcall(RenderImage.renderImageData, RenderImage, data, #data, false)
-  if not ok or not source_bb or cancelled() then
+  if not ok or not source_bb then
     if source_bb and source_bb.free then source_bb:free() end
     return nil
   end

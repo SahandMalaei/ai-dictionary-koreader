@@ -144,7 +144,7 @@ function Pronunciation.is_enabled()
     and has_value(configuration.voice_model)
 end
 
-function Pronunciation.synthesize(text, plugin_dir, context)
+function Pronunciation.synthesize_data(text, context)
   local configuration = load_configuration()
   local api_key_value = get_api_key(configuration)
   local voice_endpoint = get_voice_endpoint(configuration)
@@ -158,8 +158,6 @@ function Pronunciation.synthesize(text, plugin_dir, context)
   if not text or text == "" then
     return nil, "No selected text to synthesize."
   end
-
-  plugin_dir = plugin_dir or "AI_Dictionary.koplugin"
 
   local response_format = DEFAULT_RESPONSE_FORMAT
   local voice = has_value(configuration.voice_voice) and configuration.voice_voice or get_default_voice(voice_endpoint)
@@ -197,6 +195,16 @@ function Pronunciation.synthesize(text, plugin_dir, context)
     return nil, err
   end
 
+  return body, response_format
+end
+
+function Pronunciation.save_audio(data, plugin_dir, response_format)
+  if type(data) ~= "string" or data == "" then
+    return nil, "Voice TTS returned no audio data."
+  end
+
+  plugin_dir = plugin_dir or "AI_Dictionary.koplugin"
+  response_format = response_format or DEFAULT_RESPONSE_FORMAT
   local audio_dir, audio_path = next_audio_path(plugin_dir, response_format)
   if not ensure_dir(audio_dir) then
     return nil, "Could not create Audio directory: " .. tostring(audio_dir)
@@ -207,8 +215,16 @@ function Pronunciation.synthesize(text, plugin_dir, context)
     return nil, "Could not write TTS audio file: " .. tostring(write_err)
   end
 
-  logger.warn("AI Dictionary TTS: saved", audio_path, "bytes=", #body)
+  logger.warn("AI Dictionary TTS: saved", audio_path, "bytes=", #data)
   return audio_path
+end
+
+function Pronunciation.synthesize(text, plugin_dir, context)
+  local data, response_format_or_err = Pronunciation.synthesize_data(text, context)
+  if not data then
+    return nil, response_format_or_err
+  end
+  return Pronunciation.save_audio(data, plugin_dir, response_format_or_err)
 end
 
 return Pronunciation

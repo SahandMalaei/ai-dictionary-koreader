@@ -3,6 +3,7 @@ local UIManager = require("ui/uimanager")
 
 local AIViewer = require("ai_viewer")
 local AnswerFormatter = require("answer_formatter")
+local BackgroundWorker = require("background_worker")
 local Context = require("context")
 local Config = require("configuration_manager")
 local ErrorBoundary = require("error_boundary")
@@ -75,6 +76,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
   current_viewer.user_scroll_enabled = false
 
   local function refresh_current_viewer()
+    if session and session.cancelled then return end
     local viewer = session and session.current_viewer or current_viewer
     if not viewer then return end
     current_viewer = viewer:update(viewer.text, nil, { user_scroll_enabled = viewer.user_scroll_enabled })
@@ -97,14 +99,11 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
     session.current_viewer.images = { placeholder }
     refresh_current_viewer()
 
-    session.image_lookup_action = ErrorBoundary.wrap("Wikipedia image lookup", function()
-      session.image_lookup_action = nil
+    local image_data = nil
+    local function finish_image_lookup()
+      session.image_lookup_cancel = nil
       if session.cancelled then return end
-      local image = WikipediaImage.fetch(title, function() return session.cancelled end)
-      if session.cancelled then
-        WikipediaImage.free(image)
-        return
-      end
+      local image = image_data and WikipediaImage.from_data(image_data, title) or nil
       if not image then
         image = WikipediaImage.from_file(session.no_image_placeholder_path, title)
         if not image then
@@ -124,8 +123,20 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       placeholder.title = image.title
       refresh_current_viewer()
       if old_bb and old_bb.free then old_bb:free() end
-    end)
-    UIManager:scheduleIn(0, session.image_lookup_action)
+    end
+
+    session.image_lookup_cancel = BackgroundWorker.start(function(emit)
+      local data = WikipediaImage.download(title)
+      if data then emit(data) end
+    end, {
+      on_message = function(data)
+        if not session.cancelled then image_data = data end
+      end,
+      on_complete = ErrorBoundary.wrap("finish Wikipedia image lookup", finish_image_lookup),
+      on_error = ErrorBoundary.wrap("fail Wikipedia image lookup", function()
+        finish_image_lookup()
+      end),
+    })
   end
 
   local function visible_response(response)
@@ -142,6 +153,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
   end
 
   local function update_viewer(answer, final_debug_prompt, update_options)
+    if session and session.cancelled then return end
     last_rendered_answer = answer
     current_viewer = AnswerFormatter.render_answer(
       current_viewer,
@@ -279,6 +291,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       plugin:playDictionaryPronunciation(tts_request)
     end or nil,
     benedict = plugin,
+    tts_request = tts_request,
     user_scroll_enabled = not NetworkMgr:isOnline(),
     bottom_sheet = true,
     bottom_sheet_position = context.viewer_position,
@@ -292,20 +305,24 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   session.current_viewer = chatgpt_viewer
   chatgpt_viewer.auxiliary_cancel = ErrorBoundary.wrap("cancel lookup session", function()
     session.cancelled = true
-    if session.image_lookup_action then UIManager:unschedule(session.image_lookup_action) end
+    if session.query_start_action then UIManager:unschedule(session.query_start_action) end
+    if session.image_lookup_cancel then session.image_lookup_cancel() end
+    session.image_lookup_cancel = nil
+    TTS.cancel(tts_request)
     WikipediaImage.free(session.image_descriptor)
   end)
 
   close_selection_highlight(ui, true)
   UIManager:show(chatgpt_viewer)
 
-  state.last_query = resolve_query(query, context.replacements)
+  local query_text = resolve_query(query, context.replacements)
   if image_protocol then
-    state.last_query = state.last_query .. WikipediaImage.prompt_suffix
+    query_text = query_text .. WikipediaImage.prompt_suffix
   end
   if is_dictionary_query or is_explain_query then
-    state.last_query = state.last_query .. output_language_suffix()
+    query_text = query_text .. output_language_suffix()
   end
+  state.last_query = query_text
   state.last_preface_with_selection = preface_with_selection
   state.last_display_selection = context.display_selection
   state.last_request_parameters = request_parameters
@@ -317,24 +334,27 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     return
   end
 
-  UIManager:scheduleIn(0.01, ErrorBoundary.wrap("start query stream", function()
+  session.query_start_action = ErrorBoundary.wrap("start query stream", function()
+    session.query_start_action = nil
+    if session.cancelled then return end
     local message_history = {
       {
         role = "user",
-        content = state.last_query,
+        content = query_text,
       },
     }
 
-    QuerySession.stream_answer(chatgpt_viewer, message_history, state.last_is_dictionary, context.display_selection, preface_with_selection, function(answer)
-      if state.last_is_dictionary and answer and answer ~= "" then
+    QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictionary_query, context.display_selection, preface_with_selection, function(answer)
+      if is_dictionary_query and answer and answer ~= "" then
         save_lookup_entry(plugin.path, context.selected_text, context.selection_context)
       end
     end, request_parameters, function()
       if tts_request then
         TTS.mark_text_query_finished(tts_request)
       end
-    end, Config.is_debug_mode_enabled() and state.last_query or nil, session)
-  end))
+    end, Config.is_debug_mode_enabled() and query_text or nil, session)
+  end)
+  UIManager:scheduleIn(0.01, session.query_start_action)
 end
 
 function QuerySession.start_report(report_viewer, report_prompt)
@@ -358,6 +378,15 @@ end
 
 function QuerySession.regenerate(plugin, chatgpt_viewer)
   local online = NetworkMgr:isOnline()
+  local tts_request = chatgpt_viewer.tts_request
+  if chatgpt_viewer.stream_cancel then
+    chatgpt_viewer.stream_cancel()
+    chatgpt_viewer.stream_cancel = nil
+  end
+  if chatgpt_viewer.auxiliary_cancel then
+    chatgpt_viewer.auxiliary_cancel()
+    chatgpt_viewer.auxiliary_cancel = nil
+  end
   local old_images = chatgpt_viewer.images
   chatgpt_viewer.images = nil
   local updated_viewer = chatgpt_viewer:update(wait_message(), nil, { user_scroll_enabled = not online })
@@ -371,7 +400,10 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
   }
   updated_viewer.auxiliary_cancel = ErrorBoundary.wrap("cancel regenerated session", function()
     session.cancelled = true
-    if session.image_lookup_action then UIManager:unschedule(session.image_lookup_action) end
+    if session.query_start_action then UIManager:unschedule(session.query_start_action) end
+    if session.image_lookup_cancel then session.image_lookup_cancel() end
+    session.image_lookup_cancel = nil
+    TTS.cancel(tts_request)
     WikipediaImage.free(session.image_descriptor)
   end)
 
@@ -379,7 +411,9 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
     return
   end
 
-  UIManager:scheduleIn(0.01, ErrorBoundary.wrap("start regenerated query stream", function()
+  session.query_start_action = ErrorBoundary.wrap("start regenerated query stream", function()
+    session.query_start_action = nil
+    if session.cancelled then return end
     local message_history = {
       {
         role = "user",
@@ -398,12 +432,17 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
         state.last_preface_with_selection,
         nil,
         state.last_request_parameters,
-        nil,
+        function()
+          if tts_request then
+            TTS.mark_text_query_finished(tts_request)
+          end
+        end,
         Config.is_debug_mode_enabled() and state.last_query or nil,
         session
       )
     end
-  end))
+  end)
+  UIManager:scheduleIn(0.01, session.query_start_action)
 end
 
 return QuerySession

@@ -22,6 +22,7 @@ local https = require("ssl.https")
 local http = require("socket.http")
 local ltn12 = require("ltn12")
 local json = require("json")
+local BackgroundWorker = require("background_worker")
 
 local REQUEST_TIMEOUT_SECONDS = 20
 
@@ -212,7 +213,8 @@ local function queryAI(message_history, opts)
   local accumulated = ""
   local token_count = 0
   local response_buffer = ""
-  local cancelled = false
+  local response_body = {}
+  local response_code = nil
 
   local function handlePayload(payload)
     if payload == "[DONE]" then
@@ -234,48 +236,45 @@ local function queryAI(message_history, opts)
     end
   end
 
-  local responseBody = {}
-  local sink = function(chunk)
-    if cancelled then
-      return nil, "cancelled"
-    end
-    if not chunk then
-      return 1
-    end
-
-    table.insert(responseBody, chunk)
-    response_buffer = parseSseBuffer(response_buffer .. chunk, handlePayload)
-    return 1
-  end
-
-  local requestClient = getRequestClient(api_url)
-  local _, code = requestClient {
-    url = api_url,
-    method = "POST",
-    headers = buildHeaders(requestBody, api_key_value),
-    source = ltn12.source.string(requestBody),
-    sink = sink,
-  }
-
-  if cancelled then
-    return function() end
-  end
-
-  if (code == "wantread" or code == "timeout") and accumulated ~= "" then
-    if opts.on_done then
-      opts.on_done(accumulated)
-    end
-  elseif tostring(code) ~= "200" then
-    if opts.on_error then
-      opts.on_error(tostring(code) .. "\n\nResponse: " .. table.concat(responseBody))
-    end
-  elseif opts.on_done then
-    opts.on_done(accumulated)
-  end
-
-  return function()
-    cancelled = true
-  end
+  return BackgroundWorker.start(function(emit)
+    local request_client = getRequestClient(api_url)
+    local _, code = request_client {
+      url = api_url,
+      method = "POST",
+      headers = buildHeaders(requestBody, api_key_value),
+      source = ltn12.source.string(requestBody),
+      sink = function(chunk)
+        if chunk then emit("C" .. chunk) end
+        return 1
+      end,
+    }
+    emit("R" .. tostring(code))
+  end, {
+    on_message = function(message)
+      local kind = message:sub(1, 1)
+      local payload = message:sub(2)
+      if kind == "C" then
+        response_body[#response_body + 1] = payload
+        response_buffer = parseSseBuffer(response_buffer .. payload, handlePayload)
+      elseif kind == "R" then
+        response_code = payload
+      end
+    end,
+    on_complete = function()
+      if (response_code == "wantread" or response_code == "timeout") and accumulated ~= "" then
+        if opts.on_done then opts.on_done(accumulated) end
+      elseif response_code ~= "200" then
+        if opts.on_error then
+          opts.on_error(tostring(response_code) .. "\n\nResponse: " .. table.concat(response_body))
+        end
+      elseif opts.on_done then
+        opts.on_done(accumulated)
+      end
+    end,
+    on_error = function(err)
+      if opts.on_error then opts.on_error(err) end
+    end,
+  })
 end
 
 return queryAI
