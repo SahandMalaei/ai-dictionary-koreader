@@ -262,11 +262,15 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   if is_dictionary_query then
     tts_request = TTS.create_request_if_available(context.selected_text, context.selection_context, plugin.path)
   end
+  local initial_header_text = nil
+  if is_dictionary_query then
+    initial_header_text = select(1, AnswerFormatter.format_dictionary_output(context.display_selection, ""))
+  end
 
   local chatgpt_viewer = AIViewer:new {
     title = dialog_title,
     text = wait_message(),
-    header_text = is_dictionary_query and context.display_selection or nil,
+    header_text = initial_header_text,
     onAskQuestion = nil,
     onPronunciation = tts_request and function()
       plugin:playDictionaryPronunciation(tts_request)
@@ -275,6 +279,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     user_scroll_enabled = not NetworkMgr:isOnline(),
     bottom_sheet = true,
     bottom_sheet_position = context.viewer_position,
+    bottom_sheet_min_body_height = image_protocol and WikipediaImage.required_viewport_height() or nil,
     bottom_sheet_selection_bounds = context.selection_bounds,
     close_callback = ErrorBoundary.wrap("close lookup session", function()
       session.cancelled = true

@@ -185,6 +185,7 @@ local AIViewer = InputContainer:extend {
   bottom_sheet = nil,
   bottom_sheet_position = "bottom",
   bottom_sheet_body_lines = DEFAULT_BOTTOM_SHEET_BODY_LINES,
+  bottom_sheet_min_body_height = nil,
   bottom_sheet_button_height_scale = DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE,
   bottom_sheet_edge_padding_horizontal = DEFAULT_BOTTOM_SHEET_EDGE_PADDING,
   bottom_sheet_edge_padding_vertical = DEFAULT_BOTTOM_SHEET_EDGE_PADDING,
@@ -420,6 +421,9 @@ function AIViewer:init()
     local minimum_sheet_height = non_text_height + 1
     local body_lines = math.max(1, self.bottom_sheet_body_lines or DEFAULT_BOTTOM_SHEET_BODY_LINES)
     local requested_body_height = body_line_height * body_lines
+    if type(self.bottom_sheet_min_body_height) == "number" then
+      requested_body_height = math.max(requested_body_height, self.bottom_sheet_min_body_height)
+    end
     if self.images then
       for _, image in ipairs(self.images) do
         if image.fixed_box_size then
@@ -906,6 +910,7 @@ function AIViewer:update(new_text, new_header_text, options)
     bottom_sheet = self.bottom_sheet,
     bottom_sheet_position = self.bottom_sheet_position,
     bottom_sheet_body_lines = self.bottom_sheet_body_lines,
+    bottom_sheet_min_body_height = self.bottom_sheet_min_body_height,
     bottom_sheet_button_height_scale = self.bottom_sheet_button_height_scale,
     bottom_sheet_edge_padding_horizontal = self.bottom_sheet_edge_padding_horizontal,
     bottom_sheet_edge_padding_vertical = self.bottom_sheet_edge_padding_vertical,

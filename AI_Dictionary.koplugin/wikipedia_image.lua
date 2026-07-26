@@ -23,6 +23,11 @@ Before the user-visible answer, output exactly one metadata line in this form:
 <aidictionary-wikipedia>English Wikipedia-style FULL title plus disambiguation hint if necessary (e.g. (Video Game)) or None</aidictionary-wikipedia>
 Choose a title only when the selected text can be represented accurately by one specific subject that definitely has an English Wikipedia article with a representative lead image (strong candidates: famous people, tools, companies, games, movies, books, food items, animals and vegetables). Otherwise use None. Output this metadata line first, then follow all the original answer instructions exactly.]]
 
+function WikipediaImage.required_viewport_height()
+  -- TextBoxWidget limits an image to half of its viewport.
+  return BOX_SIZE * 2
+end
+
 https.TIMEOUT = REQUEST_TIMEOUT_SECONDS
 http.TIMEOUT = REQUEST_TIMEOUT_SECONDS
 
