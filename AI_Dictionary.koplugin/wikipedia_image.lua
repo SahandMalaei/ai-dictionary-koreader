@@ -135,6 +135,7 @@ function WikipediaImage.new_placeholder(title, show_outline)
     text_padding_left = TEXT_PADDING_LEFT,
     bb = bb,
     title = title,
+    is_placeholder = true,
   }
 end
 

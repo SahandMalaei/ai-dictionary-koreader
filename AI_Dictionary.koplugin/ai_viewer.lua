@@ -931,7 +931,7 @@ function AIViewer:showTappedImage(text_widget, ges)
     end
 
     local image = text_widget.line_num_to_image[text_widget.virtual_line_num]
-    if not image or not image.bb
+    if not image or image.is_placeholder or not image.bb
         or type(image.width) ~= "number" or type(image.height) ~= "number" then
       return false
     end

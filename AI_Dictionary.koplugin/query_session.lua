@@ -109,11 +109,13 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       if not image and session.image_download_path then
         image = WikipediaImage.from_file(session.image_download_path, title)
       end
+      local is_placeholder = false
       if session.image_download_path then
         os.remove(session.image_download_path)
         session.image_download_path = nil
       end
       if not image then
+        is_placeholder = true
         image = WikipediaImage.from_file(session.no_image_placeholder_path, title)
         if not image then
           keep_empty_image_box()
@@ -130,6 +132,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       placeholder.width = image.width
       placeholder.height = image.height
       placeholder.title = image.title
+      placeholder.is_placeholder = is_placeholder
       refresh_current_viewer()
       if old_bb and old_bb.free then old_bb:free() end
     end
