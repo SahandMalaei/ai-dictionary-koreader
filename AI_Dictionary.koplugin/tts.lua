@@ -1,6 +1,4 @@
 local Device = require("device")
-local UIManager = require("ui/uimanager")
-local Notification = require("ui/widget/notification")
 
 local AudioPlayer = require("audio_player")
 local AndroidHttpWorker = require("android_http_worker")
@@ -8,16 +6,6 @@ local BackgroundWorker = require("background_worker")
 local Pronunciation = require("pronunciation")
 
 local TTS = {}
-
-local function play_audio(tts_request)
-  local played = AudioPlayer.play(tts_request.audio_path, tts_request.plugin_dir)
-  if not played then
-    UIManager:show(Notification:new {
-      text = "Pronunciation audio was generated, but playback could not be started.",
-    })
-  end
-  return played
-end
 
 function TTS.cleanup(plugin_dir)
   Pronunciation.cleanup_audio(plugin_dir)
@@ -117,7 +105,7 @@ function TTS.start_request(tts_request, play_when_ready)
     tts_request.err = nil
     if tts_request.play_when_ready then
       tts_request.play_when_ready = false
-      play_audio(tts_request)
+      AudioPlayer.play(tts_request.audio_path, tts_request.plugin_dir)
     end
   end
 
@@ -217,7 +205,7 @@ function TTS.play(tts_request)
   end
 
   if tts_request.status == "ready" and tts_request.audio_path then
-    play_audio(tts_request)
+    AudioPlayer.play(tts_request.audio_path, tts_request.plugin_dir)
     return
   end
 
