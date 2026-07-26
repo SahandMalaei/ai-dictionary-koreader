@@ -65,7 +65,7 @@ I'm calling on you—the community—to help expand this plugin with features th
 1. The plugin is built around English-to-English dictionary lookups, though supporting other languages in the future might make sense. Making it seamless is the main challenge.
 2. The plugin currently keeps a local log of every dictionary lookup. I'm open to suggestions about what kinds of personalized learning material we can create for the user with that.
 
-This plugin wouldn't have been possible without the backbone provided by [AskGPT](https://github.com/drewbaumann/AskGPT)—an excellent plugin that lets you talk to ChatGPT directly from inside KOReader. Open source is awesome!
+This plugin wouldn't have been possible without the initial backbone provided by [AskGPT](https://github.com/drewbaumann/AskGPT)—an excellent plugin that lets you talk to ChatGPT directly from inside KOReader. Open source is awesome!
 
 ## Support the Project ❤️
 
