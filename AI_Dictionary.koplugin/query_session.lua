@@ -102,7 +102,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       if session.cancelled then return end
       local image = WikipediaImage.fetch(title, function() return session.cancelled end)
       if session.cancelled then
-        if image and image.bb then image.bb:free() end
+        WikipediaImage.free(image)
         return
       end
       if not image then
@@ -114,6 +114,9 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       end
       local old_bb = placeholder.bb
       placeholder.bb = image.bb
+      placeholder.hi_bb = image.hi_bb
+      placeholder.hi_width = image.hi_width
+      placeholder.hi_height = image.hi_height
       -- TextBoxWidget may adjust descriptor dimensions during an earlier
       -- placeholder layout. Restore them to the final bitmap's exact bounds.
       placeholder.width = image.width
@@ -290,11 +293,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   chatgpt_viewer.auxiliary_cancel = ErrorBoundary.wrap("cancel lookup session", function()
     session.cancelled = true
     if session.image_lookup_action then UIManager:unschedule(session.image_lookup_action) end
-    local bb = session.image_descriptor and session.image_descriptor.bb
-    if bb and bb.free then
-      bb:free()
-      session.image_descriptor.bb = nil
-    end
+    WikipediaImage.free(session.image_descriptor)
   end)
 
   close_selection_highlight(ui, true)
@@ -362,8 +361,7 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
   local old_images = chatgpt_viewer.images
   chatgpt_viewer.images = nil
   local updated_viewer = chatgpt_viewer:update(wait_message(), nil, { user_scroll_enabled = not online })
-  local old_bb = old_images and old_images[1] and old_images[1].bb
-  if old_bb and old_bb.free then old_bb:free() end
+  WikipediaImage.free(old_images and old_images[1])
 
   local session = {
     cancelled = false,
@@ -374,11 +372,7 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
   updated_viewer.auxiliary_cancel = ErrorBoundary.wrap("cancel regenerated session", function()
     session.cancelled = true
     if session.image_lookup_action then UIManager:unschedule(session.image_lookup_action) end
-    local bb = session.image_descriptor and session.image_descriptor.bb
-    if bb and bb.free then
-      bb:free()
-      session.image_descriptor.bb = nil
-    end
+    WikipediaImage.free(session.image_descriptor)
   end)
 
   if not online then

@@ -167,7 +167,13 @@ local function make_boxed_image(source_bb, title)
   local scale = math.min(inner_size / source_width, inner_size / source_height)
   local image_width = math.max(1, math.floor(source_width * scale + 0.5))
   local image_height = math.max(1, math.floor(source_height * scale + 0.5))
-  local scaled_bb = RenderImage:scaleBlitBuffer(source_bb, image_width, image_height)
+  -- Keep the downloaded source intact for the full-screen image viewer.
+  local scaled_bb
+  if image_width == source_width and image_height == source_height then
+    scaled_bb = source_bb:copy()
+  else
+    scaled_bb = RenderImage:scaleBlitBuffer(source_bb, image_width, image_height, false)
+  end
   local box_bb = Blitbuffer.new(BUFFER_WIDTH, BOX_SIZE, Blitbuffer.TYPE_BBRGB32)
   box_bb:fill(Blitbuffer.COLOR_WHITE)
   box_bb:blitFrom(
@@ -192,11 +198,24 @@ local function make_boxed_image(source_bb, title)
   return {
     width = box_bb:getWidth(),
     height = box_bb:getHeight(),
+    hi_width = source_width,
+    hi_height = source_height,
+    hi_bb = source_bb,
     fixed_box_size = BOX_SIZE,
     text_padding_left = TEXT_PADDING_LEFT,
     bb = box_bb,
     title = title,
   }
+end
+
+function WikipediaImage.free(image)
+  if not image then return end
+  local bb = image.bb
+  local hi_bb = image.hi_bb
+  image.bb = nil
+  image.hi_bb = nil
+  if hi_bb and hi_bb ~= bb and hi_bb.free then hi_bb:free() end
+  if bb and bb.free then bb:free() end
 end
 
 function WikipediaImage.fetch(title_answer, cancelled)

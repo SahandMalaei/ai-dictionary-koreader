@@ -137,6 +137,35 @@ local function set_button_table_radius(button_table, radius)
   end
 end
 
+local function make_image_viewer_provider(source_bb)
+  local rendered_bb = nil
+  return function(scale_factor, max_width, max_height)
+    if rendered_bb and rendered_bb.free then
+      rendered_bb:free()
+      rendered_bb = nil
+    end
+    if scale_factor == false then
+      return
+    end
+
+    local source_width = source_bb:getWidth()
+    local source_height = source_bb:getHeight()
+    local applied_scale = scale_factor
+    if applied_scale == 0 then
+      applied_scale = math.min(max_width / source_width, max_height / source_height)
+    end
+    local target_width = math.max(1, math.floor(source_width * applied_scale + 0.5))
+    local target_height = math.max(1, math.floor(source_height * applied_scale + 0.5))
+    local RenderImage = require("ui/renderimage")
+    if target_width == source_width and target_height == source_height then
+      rendered_bb = source_bb:copy()
+    else
+      rendered_bb = RenderImage:scaleBlitBuffer(source_bb, target_width, target_height, false)
+    end
+    return rendered_bb, applied_scale
+  end
+end
+
 local AIViewer = InputContainer:extend {
   title = nil,
   text = nil,
@@ -578,6 +607,12 @@ function AIViewer:init()
     alignment_strict = self.alignment_strict,
     scroll_callback = self._buttons_scroll_callback,
   }
+  if self.images and self.scroll_text_w.text_widget then
+    local text_widget = self.scroll_text_w.text_widget
+    text_widget.onTapImage = function(_, arg, ges)
+      return self:showTappedImage(text_widget, ges)
+    end
+  end
 
   local text_group = nil
   if header_widget then
@@ -885,6 +920,41 @@ function AIViewer:handleTextSelection(text, hold_duration, start_idx, end_idx, t
           or _("Selection copied to clipboard."),
     })
   end
+end
+
+function AIViewer:showTappedImage(text_widget, ges)
+  return ErrorBoundary.call("show enlarged image", function()
+    if not text_widget or not ges or not ges.pos
+        or not text_widget.dimen or not text_widget.line_num_to_image then
+      return false
+    end
+
+    local image = text_widget.line_num_to_image[text_widget.virtual_line_num]
+    if not image or not image.bb
+        or type(image.width) ~= "number" or type(image.height) ~= "number" then
+      return false
+    end
+
+    local tap_x = ges.pos.x - (text_widget.dimen.x or 0)
+    local tap_y = ges.pos.y - (text_widget.dimen.y or 0)
+    if tap_x <= text_widget.width - image.width or tap_x >= text_widget.width
+        or tap_y <= 0 or tap_y >= image.height then
+      return false
+    end
+
+    local ImageViewer = require("ui/widget/imageviewer")
+    UIManager:show(ImageViewer:new {
+      -- ImageViewer rebuilds its ImageWidget after taps, zooms and rotations.
+      -- Give each rebuild a fresh buffer so the retained source stays reusable.
+      image = make_image_viewer_provider(image.hi_bb or image.bb),
+      image_disposable = false,
+      with_title_bar = true,
+      title_text = image.title,
+      caption = image.caption,
+      fullscreen = true,
+    })
+    return true
+  end)
 end
 
 function AIViewer:update(new_text, new_header_text, options)
