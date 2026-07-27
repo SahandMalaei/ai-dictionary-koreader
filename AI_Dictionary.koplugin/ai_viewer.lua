@@ -28,6 +28,7 @@ local TextBoxWidget = require("ui/widget/textboxwidget")
 local Size = require("ui/size")
 local TitleBar = require("ui/widget/titlebar")
 local UIManager = require("ui/uimanager")
+local DeepDive = require("deep_dive")
 local ErrorBoundary = require("error_boundary")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
@@ -204,6 +205,8 @@ local AIViewer = InputContainer:extend {
 
   onAskQuestion = nil,
   onPronunciation = nil,
+  onDeepDive = nil,
+  deep_dive_focus = nil,
 
   benedict = nil,
   tts_request = nil,
@@ -608,10 +611,18 @@ function AIViewer:init()
     alignment_strict = self.alignment_strict,
     scroll_callback = self._buttons_scroll_callback,
   }
-  if self.images and self.scroll_text_w.text_widget then
+  if self.scroll_text_w.text_widget then
     local text_widget = self.scroll_text_w.text_widget
     text_widget.onTapImage = function(_, arg, ges)
       return self:showTappedImage(text_widget, ges)
+    end
+
+    local on_tap_scroll_text = self.scroll_text_w.onTapScrollText
+    self.scroll_text_w.onTapScrollText = function(scroll_widget, arg, ges)
+      if self:handleDeepDiveTap(text_widget, ges) then
+        return true
+      end
+      return on_tap_scroll_text(scroll_widget, arg, ges)
     end
   end
 
@@ -923,6 +934,35 @@ function AIViewer:handleTextSelection(text, hold_duration, start_idx, end_idx, t
   end
 end
 
+function AIViewer:handleDeepDiveTap(text_widget, ges)
+  return ErrorBoundary.call("open AI Explain deep dive", function()
+    if type(self.onDeepDive) ~= "function" or not text_widget
+        or not text_widget._ptf_char_is_bold or not text_widget.charlist
+        or not ges or not ges.pos or not text_widget.dimen then
+      return false
+    end
+
+    local x = ges.pos.x - (text_widget.dimen.x or 0)
+    local y = ges.pos.y - (text_widget.dimen.y or 0)
+    if x < 0 or y < 0 or x >= text_widget.dimen.w or y >= text_widget.dimen.h then
+      return false
+    end
+
+    local term = DeepDive.term_at(
+      text_widget.charlist,
+      text_widget._ptf_char_is_bold,
+      text_widget:getCharPosAtXY(x, y),
+      self.deep_dive_focus
+    )
+    if not term then
+      return false
+    end
+
+    self.onDeepDive(term)
+    return true
+  end) or false
+end
+
 function AIViewer:showTappedImage(text_widget, ges)
   return ErrorBoundary.call("show enlarged image", function()
     if not text_widget or not ges or not ges.pos
@@ -961,6 +1001,14 @@ end
 function AIViewer:update(new_text, new_header_text, options)
   options = options or {}
   UIManager:close(self)
+  local on_deep_dive = self.onDeepDive
+  local deep_dive_focus = self.deep_dive_focus
+  if options.on_deep_dive ~= nil then
+    on_deep_dive = options.on_deep_dive
+  end
+  if options.deep_dive_focus ~= nil then
+    deep_dive_focus = options.deep_dive_focus
+  end
   local updated_viewer = AIViewer:new {
     title = self.title,
     text = new_text,
@@ -970,6 +1018,8 @@ function AIViewer:update(new_text, new_header_text, options)
     buttons_table = self.buttons_table,
     onAskQuestion = self.onAskQuestion,
     onPronunciation = self.onPronunciation,
+    onDeepDive = on_deep_dive,
+    deep_dive_focus = deep_dive_focus,
     benedict = self.benedict,
     tts_request = self.tts_request,
     user_scroll_enabled = options.user_scroll_enabled ~= nil and options.user_scroll_enabled or self.user_scroll_enabled,

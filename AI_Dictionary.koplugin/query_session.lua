@@ -8,6 +8,7 @@ local AnswerFormatter = require("answer_formatter")
 local BackgroundWorker = require("background_worker")
 local Context = require("context")
 local Config = require("configuration_manager")
+local DeepDive = require("deep_dive")
 local ErrorBoundary = require("error_boundary")
 local TTS = require("tts")
 local queryAI = require("ai_query")
@@ -255,11 +256,17 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
         if boundary then
           last_rendered_dictionary_boundary = boundary
           local partial_answer = visible:sub(1, boundary - 1):gsub("%s+$", "")
-          update_viewer(partial_answer, nil, { user_scroll_enabled = false })
+          update_viewer(partial_answer, nil, {
+            user_scroll_enabled = false,
+            on_deep_dive = false,
+          })
         end
       elseif token_count - last_rendered_token_count >= STREAM_UPDATE_TOKEN_INTERVAL then
         last_rendered_token_count = token_count
-        update_viewer(visible, nil, { user_scroll_enabled = false })
+        update_viewer(visible, nil, {
+          user_scroll_enabled = false,
+          on_deep_dive = false,
+        })
       end
     end,
     on_done = function(accumulated)
@@ -268,9 +275,15 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
         visible = WikipediaImage.strip_metadata_fallback(accumulated)
       end
       if visible ~= last_rendered_answer or debug_prompt then
-        update_viewer(visible, debug_prompt, { user_scroll_enabled = true })
+        update_viewer(visible, debug_prompt, {
+          user_scroll_enabled = true,
+          on_deep_dive = session and session.deep_dive_callback or false,
+          deep_dive_focus = session and session.deep_dive_focus or false,
+        })
       else
         current_viewer.user_scroll_enabled = true
+        current_viewer.onDeepDive = session and session.deep_dive_callback or false
+        current_viewer.deep_dive_focus = session and session.deep_dive_focus or false
       end
       if on_success then
         on_success(visible)
@@ -280,7 +293,10 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       end
     end,
     on_error = function(err)
-      update_viewer("Error querying AI: " .. tostring(err), nil, { user_scroll_enabled = true })
+      update_viewer("Error querying AI: " .. tostring(err), nil, {
+        user_scroll_enabled = true,
+        on_deep_dive = false,
+      })
       if on_complete then
         on_complete()
       end
@@ -409,19 +425,93 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     return
   end
 
+  session.message_history = {
+    {
+      role = "user",
+      content = query_text,
+    },
+  }
+
+  if is_explain_query then
+    session.deep_dive_path = { context.selected_text }
+    session.deep_dive_focus = context.selected_text
+
+    session.deep_dive_callback = ErrorBoundary.wrap("start AI Explain deep dive", function(term)
+      if session.cancelled or not term or term == "" then return end
+
+      if session.image_lookup_cancel then
+        session.image_lookup_cancel()
+        session.image_lookup_cancel = nil
+      end
+      if session.image_download_path then
+        os.remove(session.image_download_path)
+        session.image_download_path = nil
+      end
+
+      local viewer = session.current_viewer
+      local old_images = viewer and viewer.images
+      if viewer then
+        viewer.images = nil
+        viewer.stream_cancel = nil
+        viewer = viewer:update(wait_message(), nil, {
+          user_scroll_enabled = not NetworkMgr:isOnline(),
+          on_deep_dive = false,
+        })
+        session.current_viewer = viewer
+      end
+      WikipediaImage.free(old_images and old_images[1])
+      session.image_descriptor = nil
+      session.image_lookup_scheduled = false
+      session.metadata_received = false
+
+      session.deep_dive_path[#session.deep_dive_path + 1] = term
+      session.deep_dive_focus = term
+
+      local prompt = DeepDive.build_prompt(session.deep_dive_path)
+      if image_protocol then
+        prompt = prompt .. WikipediaImage.prompt_suffix
+      end
+      prompt = prompt .. output_language_suffix()
+      session.message_history[#session.message_history + 1] = {
+        role = "user",
+        content = prompt,
+      }
+
+      if not NetworkMgr:isOnline() or not viewer then return end
+
+      QuerySession.stream_answer(
+        viewer,
+        session.message_history,
+        false,
+        "",
+        false,
+        function(answer)
+          session.message_history[#session.message_history + 1] = {
+            role = "assistant",
+            content = answer,
+          }
+        end,
+        request_parameters,
+        nil,
+        Config.is_debug_mode_enabled() and prompt or nil,
+        session
+      )
+    end)
+  end
+
   session.query_start_action = ErrorBoundary.wrap("start query stream", function()
     session.query_start_action = nil
     if session.cancelled then return end
-    local message_history = {
-      {
-        role = "user",
-        content = query_text,
-      },
-    }
 
-    QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictionary_query, context.display_selection, preface_with_selection, function(answer)
+    QuerySession.stream_answer(chatgpt_viewer, session.message_history, is_dictionary_query, context.display_selection, preface_with_selection, function(answer)
       if is_dictionary_query and answer and answer ~= "" then
         save_lookup_entry(plugin.path, context.selected_text, context.selection_context)
+      end
+      if is_explain_query then
+        session.message_history[#session.message_history + 1] = {
+          role = "assistant",
+          content = answer,
+        }
       end
     end, request_parameters, function()
       if tts_request then
