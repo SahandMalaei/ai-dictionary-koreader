@@ -218,19 +218,26 @@ local function queryAI(message_history, opts)
   local response_body = {}
   local response_code = nil
   local android_response_length = 0
+  local stream_completed = false
 
   local function handlePayload(payload)
     if payload == "[DONE]" then
+      stream_completed = true
       return
     end
 
     local ok_json, obj = pcall(function() return json.decode(payload) end)
-    local delta = ok_json
+    local choice = ok_json
         and obj
         and obj.choices
         and obj.choices[1]
-        and obj.choices[1].delta
-        and obj.choices[1].delta.content
+    local delta = choice
+        and choice.delta
+        and choice.delta.content
+
+    if choice and choice.finish_reason ~= nil then
+      stream_completed = true
+    end
 
     if delta and delta ~= "" then
       accumulated = accumulated .. delta
@@ -251,11 +258,13 @@ local function queryAI(message_history, opts)
   end
 
   local function finish_request()
-    if (response_code == "wantread" or response_code == "timeout") and accumulated ~= "" then
-      if opts.on_done then opts.on_done(accumulated) end
-    elseif response_code ~= "200" then
+    if response_code ~= "200" and response_code ~= "wantread" and response_code ~= "timeout" then
       if opts.on_error then
         opts.on_error(tostring(response_code) .. "\n\nResponse: " .. table.concat(response_body))
+      end
+    elseif not stream_completed then
+      if opts.on_error then
+        opts.on_error("Incomplete AI response: the connection ended before the stream completed.")
       end
     elseif opts.on_done then
       opts.on_done(accumulated)

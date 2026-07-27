@@ -26,7 +26,7 @@ function Actions.register(plugin)
       callback = function()
         plugin:Query(reader_highlight_instance, "AI Explain", false,
           "I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
-          "This is the context where it appears: '...{context}...'\n" ..
+          "This is the text context where it appears (use it only as a hint, and don't let it limit your scope): '...{context}...'\n" ..
           "Use web search economically to identify or verify the book, character, place, term, reference, or allusion if that helps. " ..
           "Explain it and dive deep in relation to the book, and help me understand it better (like Amazon Kindle's X-Ray, but more concise). " ..
           "No spoilers if it's fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep your explanation brief (under 90 words, ONLY ONE PARAGRAPH), and ask no questions at the end.",
@@ -43,7 +43,7 @@ function Actions.register(plugin)
         plugin:Query(reader_highlight_instance, "AI Simplify", false,
           "I'm an advanced language learner. I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
           "This is the context where it appears: '...{context}...'\n" ..
-          "Rewrite and simplify it to make it more understandable. Brevity is also important.")
+          "Rewrite and simplify it to make it more understandable. Brevity is also important. Give just one output and not several options. Ask no questions at the end.")
       end,
     }
   end))
