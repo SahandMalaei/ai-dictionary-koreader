@@ -220,6 +220,14 @@ function SettingsMenu.get_items(plugin)
 
   for _, key in ipairs(Config.CORE_CONFIGURATION_KEYS) do
     add_value_item(key)
+    if key == "update_check" then
+      table.insert(items, {
+        text = "Check for updates now",
+        callback = ErrorBoundary.wrap("manual update check", function()
+          plugin:checkForUpdates()
+        end),
+      })
+    end
   end
 
   local custom_keys = {}

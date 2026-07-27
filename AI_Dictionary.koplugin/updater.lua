@@ -13,6 +13,9 @@ local util = require("util")
 local ErrorBoundary = require("error_boundary")
 
 local REQUEST_TIMEOUT_SECONDS = 10
+local UPDATE_PROMPT_COOLDOWN_SECONDS = 7 * 24 * 60 * 60
+local LAST_UPDATE_PROMPT_INTERACTION_SETTING =
+    "ai_dictionary_last_update_prompt_interaction"
 local REPO_OWNER = "SahandMalaei"
 local REPO_NAME = "ai-dictionary-koreader"
 local LATEST_RELEASE_URL = "https://api.github.com/repos/" .. REPO_OWNER .. "/" .. REPO_NAME .. "/releases/latest"
@@ -312,6 +315,7 @@ function Updater:new(plugin)
   return setmetatable({
     plugin = plugin,
     checked = false,
+    check_in_progress = false,
   }, { __index = self })
 end
 
@@ -322,38 +326,107 @@ function Updater:getPluginDir()
   return PLUGIN_DIR_NAME
 end
 
-function Updater:checkOnStartup()
-  if self.checked then
+function Updater:isStartupCheckCoolingDown(now)
+  if not G_reader_settings or type(G_reader_settings.readSetting) ~= "function" then
+    return false
+  end
+  local ok, last_interaction = pcall(
+    G_reader_settings.readSetting,
+    G_reader_settings,
+    LAST_UPDATE_PROMPT_INTERACTION_SETTING
+  )
+  last_interaction = ok and tonumber(last_interaction) or nil
+  now = tonumber(now) or os.time()
+  if not last_interaction or last_interaction > now then
+    return false
+  end
+  return now - last_interaction < UPDATE_PROMPT_COOLDOWN_SECONDS
+end
+
+function Updater:markUpdatePromptInteracted(now)
+  if not G_reader_settings or type(G_reader_settings.saveSetting) ~= "function" then
     return
   end
-  self.checked = true
+  G_reader_settings:saveSetting(
+    LAST_UPDATE_PROMPT_INTERACTION_SETTING,
+    tonumber(now) or os.time()
+  )
+  if type(G_reader_settings.flush) == "function" then
+    G_reader_settings:flush()
+  end
+end
 
+function Updater:performCheck(manual)
+  local release, err = get_latest_release()
+  if not release then
+    if manual then
+      show_message("Could not check for AI Dictionary updates:\n" .. tostring(err), 8)
+    end
+    return
+  end
+
+  local current_version = get_current_version(self:getPluginDir())
+  local latest_version = tostring(release.tag_name):gsub("^v", "")
+  if compare_versions(current_version, latest_version) >= 0 then
+    if manual then
+      show_message("AI Dictionary is up to date.")
+    end
+    return
+  end
+
+  self:promptForUpdate(current_version, latest_version, release.tag_name)
+end
+
+function Updater:scheduleCheck(delay, manual)
+  if self.check_in_progress then
+    if manual then
+      show_message("An AI Dictionary update check is already in progress.")
+    end
+    return
+  end
   if not NetworkMgr:isOnline() then
+    if manual then
+      show_message("Could not check for updates while offline.")
+    end
     return
   end
 
-  UIManager:scheduleIn(2, ErrorBoundary.wrap("startup update check", function()
-    local release, err = get_latest_release()
-    if not release then
-      return
+  self.check_in_progress = true
+  UIManager:scheduleIn(delay or 0, function()
+    local _, err = ErrorBoundary.call(
+      manual and "manual update check" or "startup update check",
+      self.performCheck,
+      self,
+      manual
+    )
+    self.check_in_progress = false
+    if err and manual then
+      show_message("Could not check for AI Dictionary updates:\n" .. tostring(err), 8)
     end
+  end)
+end
 
-    local current_version = get_current_version(self:getPluginDir())
-    local latest_version = tostring(release.tag_name):gsub("^v", "")
-    if compare_versions(current_version, latest_version) >= 0 then
-      return
-    end
+function Updater:checkOnStartup()
+  if self.checked then return end
+  self.checked = true
+  if self:isStartupCheckCoolingDown() then return end
+  self:scheduleCheck(2, false)
+end
 
-    self:promptForUpdate(current_version, latest_version, release.tag_name)
-  end))
+function Updater:checkManually()
+  self:scheduleCheck(0, true)
 end
 
 function Updater:promptForUpdate(current_version, latest_version, tag_name)
+  local function mark_interacted()
+    ErrorBoundary.call("save update prompt interaction", self.markUpdatePromptInteracted, self)
+  end
   UIManager:show(ConfirmBox:new {
     text = "AI Dictionary " .. latest_version .. " is available.\n\nInstalled version: "
         .. tostring(current_version) .. "\n\nUpdate now?",
     ok_text = "Update",
     ok_callback = ErrorBoundary.wrap("start plugin update", function()
+      mark_interacted()
       show_message("Updating AI Dictionary...", 2)
       UIManager:scheduleIn(0.1, ErrorBoundary.wrap("plugin update", function()
         local ok, err = self:updateToTag(tag_name)
@@ -364,6 +437,7 @@ function Updater:promptForUpdate(current_version, latest_version, tag_name)
         end
       end))
     end),
+    cancel_callback = mark_interacted,
   })
 end
 

@@ -80,6 +80,13 @@ function Benedict:deleteConfigurationValue(key)
   return ErrorBoundary.call("delete configuration value", SettingsMenu.delete_configuration_value, self, key)
 end
 
+function Benedict:checkForUpdates()
+  if not self.updater then
+    self.updater = Updater:new(self)
+  end
+  return ErrorBoundary.call("manual update check", self.updater.checkManually, self.updater)
+end
+
 function Benedict:addToMainMenu(menu_items)
   return ErrorBoundary.call("build main menu", function()
     menu_items.ai_dictionary_lookups_report = {
