@@ -9,6 +9,7 @@ local BackgroundWorker = require("background_worker")
 local Context = require("context")
 local Config = require("configuration_manager")
 local ErrorBoundary = require("error_boundary")
+local RelatedTerms = require("related_terms")
 local TTS = require("tts")
 local queryAI = require("ai_query")
 local save_lookup_entry = require("lookups_log")
@@ -36,6 +37,9 @@ local state = {
   last_is_report = false,
   last_is_dictionary = false,
   last_image_protocol = false,
+  last_related_protocol = false,
+  last_explain_context = nil,
+  last_deep_dive_path = nil,
 }
 
 local function repaint_now()
@@ -66,6 +70,59 @@ local function resolve_query(query, replacements)
     resolved_query = resolved_query:gsub(key, value)
   end
   return resolved_query
+end
+
+local function copy_list(values)
+  local result = {}
+  for i, value in ipairs(values or {}) do
+    result[i] = value
+  end
+  return result
+end
+
+local function without_visited_terms(terms, deep_dive_path)
+  local visited = {}
+  for _, term in ipairs(deep_dive_path or {}) do
+    visited[tostring(term):gsub("^%s+", ""):gsub("%s+$", ""):lower()] = true
+  end
+  local result = {}
+  for _, term in ipairs(terms or {}) do
+    if not visited[term:lower()] then
+      result[#result + 1] = term
+    end
+  end
+  return result
+end
+
+local function explain_request_context(book_title, deep_dive_path)
+  return "\n\nBook name: '" .. tostring(book_title or "Unknown Title") .. "'.\n" ..
+      "Exact deep-dive path: " .. table.concat(deep_dive_path or {}, "->") .. "."
+end
+
+local function build_deep_dive_query(explain_context, deep_dive_path, term)
+  return "I'm reading '" .. explain_context.book_title .. "' by '" .. explain_context.book_author ..
+      "'" .. explain_context.chapter_clause .. ".\n" ..
+      "The original passage context was: '..." .. explain_context.selection_context .. "...'\n" ..
+      "The current deep-dive search term is: '" .. term .. "'.\n" ..
+      "Explain this term or concept and why it matters along the deep-dive path and, when relevant, " ..
+      "to the book. Use web search economically if it helps identify or verify it. No spoilers if " ..
+      "the book is fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep the " ..
+      "explanation brief (under 90 words, ONLY ONE PARAGRAPH), and ask no questions at the end." ..
+      explain_request_context(explain_context.book_title, deep_dive_path)
+end
+
+local function remember_request(query_text, request_parameters, options)
+  options = options or {}
+  state.last_query = query_text
+  state.last_preface_with_selection = options.preface_with_selection or false
+  state.last_display_selection = options.display_selection or ""
+  state.last_request_parameters = request_parameters
+  state.last_is_report = options.is_report or false
+  state.last_is_dictionary = options.is_dictionary or false
+  state.last_image_protocol = options.image_protocol or false
+  state.last_related_protocol = options.related_protocol or false
+  state.last_explain_context = options.explain_context
+  state.last_deep_dive_path = copy_list(options.deep_dive_path)
 end
 
 function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictionary, display_selection, preface_with_selection, on_success, request_parameters, on_complete, debug_prompt, session)
@@ -214,14 +271,27 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
   end
 
   local function visible_response(response)
-    if not session or not session.image_protocol then
+    if not session then
       return response, true
     end
-    local title, visible, complete = WikipediaImage.parse_response(response)
-    if not complete then return "", false end
-    if not session.metadata_received then
-      session.metadata_received = true
-      schedule_wikipedia_image(title)
+    local visible = response
+    if session.image_protocol then
+      local title, image_visible, complete = WikipediaImage.parse_response(visible)
+      if not complete then return "", false end
+      if not session.metadata_received then
+        session.metadata_received = true
+        schedule_wikipedia_image(title)
+      end
+      visible = image_visible
+    end
+    if session.related_protocol then
+      local terms, related_visible, complete = RelatedTerms.parse_response(visible)
+      if not complete then return "", false end
+      if not session.related_metadata_received then
+        session.related_metadata_received = true
+        session.related_terms = without_visited_terms(terms, session.deep_dive_path)
+      end
+      visible = related_visible
     end
     return visible, true
   end
@@ -265,12 +335,26 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
     on_done = function(accumulated)
       local visible, metadata_complete = visible_response(accumulated)
       if not metadata_complete then
-        visible = WikipediaImage.strip_metadata_fallback(accumulated)
+        visible = accumulated
+        if session and session.image_protocol then
+          visible = WikipediaImage.strip_metadata_fallback(visible)
+        end
+        if session and session.related_protocol then
+          visible = RelatedTerms.strip_metadata_fallback(visible)
+          session.related_terms = {}
+        end
       end
+      local final_options = {
+        user_scroll_enabled = true,
+        related_terms = session and session.related_protocol and (session.related_terms or {}) or nil,
+      }
       if visible ~= last_rendered_answer or debug_prompt then
-        update_viewer(visible, debug_prompt, { user_scroll_enabled = true })
+        update_viewer(visible, debug_prompt, final_options)
       else
         current_viewer.user_scroll_enabled = true
+        if session and session.related_protocol then
+          update_viewer(visible, debug_prompt, final_options)
+        end
       end
       if on_success then
         on_success(visible)
@@ -280,7 +364,10 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       end
     end,
     on_error = function(err)
-      update_viewer("Error querying AI: " .. tostring(err), nil, { user_scroll_enabled = true })
+      update_viewer("Error querying AI: " .. tostring(err), nil, {
+        user_scroll_enabled = true,
+        related_terms = session and session.related_protocol and {} or nil,
+      })
       if on_complete then
         on_complete()
       end
@@ -336,6 +423,84 @@ function QuerySession.stream_plain_answer(chatgpt_viewer, message_history, on_co
   current_viewer.stream_cancel = cancel_stream
 end
 
+local function make_related_term_callback(plugin, session)
+  return ErrorBoundary.wrap("start AI Explain deep dive", function(term)
+    QuerySession.deep_dive(plugin, session, term)
+  end)
+end
+
+function QuerySession.deep_dive(plugin, session, term)
+  term = tostring(term or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  if session.cancelled or term == "" or #term > 80 or term:find("[\r\n<>]") then
+    return
+  end
+
+  local viewer = session.current_viewer
+  if not viewer then return end
+  if viewer.stream_cancel then
+    viewer.stream_cancel()
+    viewer.stream_cancel = nil
+  end
+  if session.query_start_action then
+    UIManager:unschedule(session.query_start_action)
+    session.query_start_action = nil
+  end
+  if session.image_lookup_cancel then
+    session.image_lookup_cancel()
+    session.image_lookup_cancel = nil
+  end
+
+  session.deep_dive_path[#session.deep_dive_path + 1] = term
+  local query_text = build_deep_dive_query(session.explain_context, session.deep_dive_path, term)
+  if session.image_protocol then
+    query_text = query_text .. WikipediaImage.prompt_suffix
+  end
+  query_text = query_text .. RelatedTerms.prompt_suffix .. output_language_suffix()
+
+  remember_request(query_text, session.request_parameters, {
+    image_protocol = session.image_protocol,
+    related_protocol = true,
+    explain_context = session.explain_context,
+    deep_dive_path = session.deep_dive_path,
+  })
+
+  local old_images = viewer.images
+  viewer.images = nil
+  local updated_viewer = viewer:update(wait_message(), nil, {
+    user_scroll_enabled = not NetworkMgr:isOnline(),
+    related_terms = {},
+  })
+  session.current_viewer = updated_viewer
+  WikipediaImage.free(session.image_descriptor or (old_images and old_images[1]))
+  session.image_descriptor = nil
+  session.image_lookup_scheduled = nil
+  session.metadata_received = nil
+  session.related_metadata_received = nil
+  session.related_terms = nil
+
+  if not NetworkMgr:isOnline() then
+    return
+  end
+
+  session.query_start_action = ErrorBoundary.wrap("start AI Explain deep dive stream", function()
+    session.query_start_action = nil
+    if session.cancelled then return end
+    QuerySession.stream_answer(
+      updated_viewer,
+      { { role = "user", content = query_text } },
+      false,
+      "",
+      false,
+      nil,
+      session.request_parameters,
+      nil,
+      Config.is_debug_mode_enabled() and query_text or nil,
+      session
+    )
+  end)
+  UIManager:scheduleIn(0.01, session.query_start_action)
+end
+
 function QuerySession.query(plugin, reader_highlight_instance, dialog_title, preface_with_selection, query, request_parameters)
   local ui = plugin.ui
   local context = Context.build_query_context(plugin, reader_highlight_instance, dialog_title)
@@ -345,9 +510,20 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   local session = {
     cancelled = false,
     image_protocol = image_protocol,
+    related_protocol = is_explain_query,
     no_image_placeholder_path = plugin.path .. "/resources/no-image-placeholder.jpg",
     plugin_path = plugin.path,
+    request_parameters = request_parameters,
   }
+  if is_explain_query then
+    session.explain_context = {
+      book_title = context.book_title,
+      book_author = context.book_author,
+      chapter_clause = context.chapter_clause,
+      selection_context = context.selection_context,
+    }
+    session.deep_dive_path = { context.selected_text }
+  end
   local tts_request = nil
   if is_dictionary_query then
     tts_request = TTS.create_request_if_available(context.selected_text, context.selection_context, plugin.path)
@@ -365,6 +541,8 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     onPronunciation = tts_request and function()
       plugin:playDictionaryPronunciation(tts_request)
     end or nil,
+    onRelatedTerm = is_explain_query and make_related_term_callback(plugin, session) or nil,
+    related_terms = is_explain_query and {} or nil,
     benedict = plugin,
     tts_request = tts_request,
     user_scroll_enabled = not NetworkMgr:isOnline(),
@@ -391,19 +569,27 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   UIManager:show(chatgpt_viewer)
 
   local query_text = resolve_query(query, context.replacements)
+  if is_explain_query then
+    query_text = query_text .. explain_request_context(context.book_title, session.deep_dive_path)
+  end
   if image_protocol then
     query_text = query_text .. WikipediaImage.prompt_suffix
+  end
+  if is_explain_query then
+    query_text = query_text .. RelatedTerms.prompt_suffix
   end
   if is_dictionary_query or is_explain_query then
     query_text = query_text .. output_language_suffix()
   end
-  state.last_query = query_text
-  state.last_preface_with_selection = preface_with_selection
-  state.last_display_selection = context.display_selection
-  state.last_request_parameters = request_parameters
-  state.last_is_report = false
-  state.last_is_dictionary = is_dictionary_query
-  state.last_image_protocol = image_protocol
+  remember_request(query_text, request_parameters, {
+    preface_with_selection = preface_with_selection,
+    display_selection = context.display_selection,
+    is_dictionary = is_dictionary_query,
+    image_protocol = image_protocol,
+    related_protocol = is_explain_query,
+    explain_context = session.explain_context,
+    deep_dive_path = session.deep_dive_path,
+  })
 
   if not NetworkMgr:isOnline() then
     return
@@ -433,13 +619,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
 end
 
 function QuerySession.start_report(report_viewer, report_prompt)
-  state.last_query = report_prompt
-  state.last_preface_with_selection = false
-  state.last_display_selection = ""
-  state.last_request_parameters = nil
-  state.last_is_dictionary = false
-  state.last_is_report = true
-  state.last_image_protocol = false
+  remember_request(report_prompt, nil, { is_report = true })
 
   local message_history = {
     {
@@ -464,16 +644,26 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
   end
   local old_images = chatgpt_viewer.images
   chatgpt_viewer.images = nil
-  local updated_viewer = chatgpt_viewer:update(wait_message(), nil, { user_scroll_enabled = not online })
+  local updated_viewer = chatgpt_viewer:update(wait_message(), nil, {
+    user_scroll_enabled = not online,
+    related_terms = state.last_related_protocol and {} or nil,
+  })
   WikipediaImage.free(old_images and old_images[1])
 
   local session = {
     cancelled = false,
     image_protocol = state.last_image_protocol,
+    related_protocol = state.last_related_protocol,
     current_viewer = updated_viewer,
     no_image_placeholder_path = plugin.path .. "/resources/no-image-placeholder.jpg",
     plugin_path = plugin.path,
+    request_parameters = state.last_request_parameters,
+    explain_context = state.last_explain_context,
+    deep_dive_path = copy_list(state.last_deep_dive_path),
   }
+  if session.related_protocol then
+    updated_viewer.onRelatedTerm = make_related_term_callback(plugin, session)
+  end
   updated_viewer.auxiliary_cancel = ErrorBoundary.wrap("cancel regenerated session", function()
     session.cancelled = true
     if session.query_start_action then UIManager:unschedule(session.query_start_action) end

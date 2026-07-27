@@ -204,6 +204,8 @@ local AIViewer = InputContainer:extend {
 
   onAskQuestion = nil,
   onPronunciation = nil,
+  onRelatedTerm = nil,
+  related_terms = nil,
 
   benedict = nil,
   tts_request = nil,
@@ -353,7 +355,24 @@ function AIViewer:init()
       button.height = button.height or button_content_height
     end
   end
-  local buttons = self.buttons_table or {}
+  local buttons = {}
+  for _, row in ipairs(self.buttons_table or {}) do
+    buttons[#buttons + 1] = row
+  end
+  local related_buttons = nil
+  if self.related_terms and #self.related_terms > 0 and self.onRelatedTerm then
+    related_buttons = {}
+    for _, term in ipairs(self.related_terms) do
+      local button_term = term
+      related_buttons[#related_buttons + 1] = {
+        text = button_term,
+        callback = function()
+          self.onRelatedTerm(button_term)
+        end,
+        hold_callback = self.default_hold_callback,
+      }
+    end
+  end
   local default_buttons_row_index = nil
   if self.add_default_buttons or not self.buttons_table then
     default_buttons_row_index = #buttons + 1
@@ -409,6 +428,45 @@ function AIViewer:init()
     text_padding_h = math.floor(self.text_padding * 2 + 0.5)
   end
   local inner_width = self.width - 2 * text_padding_h - 2 * self.text_margin
+  local related_button_table = nil
+  local related_buttons_height = 0
+  local related_buttons_spacing = 0
+  if related_buttons then
+    local related_table_options = {
+      width = inner_width,
+      buttons = { related_buttons },
+      zero_sep = not self.bottom_sheet,
+      show_parent = self,
+    }
+    if self.bottom_sheet then
+      local button_height_scale = self.bottom_sheet_button_height_scale or DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE
+      local button_font_size = scale_size(20, button_height_scale, 1)
+      local button_content_height = Screen:scaleBySize(button_font_size)
+      for _, button in ipairs(related_buttons) do
+        button.font_size = button.font_size or button_font_size
+        button.height = button.height or button_content_height
+      end
+      related_table_options.sep_width = scale_size(Size.line.medium, button_height_scale, 1)
+      local original_buttontable_padding = Size.padding.buttontable
+      local original_vertical_span = Size.span.vertical_default
+      Size.padding.buttontable = scale_size(original_buttontable_padding, button_height_scale)
+      Size.span.vertical_default = scale_size(original_vertical_span, button_height_scale)
+      local ok
+      ok, related_button_table = pcall(function()
+        return ButtonTable:new(related_table_options)
+      end)
+      Size.padding.buttontable = original_buttontable_padding
+      Size.span.vertical_default = original_vertical_span
+      if not ok then
+        error(related_button_table)
+      end
+    else
+      related_button_table = ButtonTable:new(related_table_options)
+    end
+    set_button_table_radius(related_button_table, DEFAULT_BUTTON_ROUNDEDNESS_SIZE)
+    related_buttons_height = related_button_table:getSize().h
+    related_buttons_spacing = Size.padding.small
+  end
   local inner_height = 1
   local header_widget = nil
   local header_height = 0
@@ -467,6 +525,7 @@ function AIViewer:init()
     if header_widget then
       textw_height = textw_height + header_height + self.header_spacing
     end
+    textw_height = textw_height + related_buttons_height + related_buttons_spacing
     self.height = textw_height + non_text_height
     if self.height > bottom_sheet_max_height then
       self.height = math.max(minimum_sheet_height, bottom_sheet_max_height)
@@ -512,9 +571,10 @@ function AIViewer:init()
   local body_height = inner_height
   if header_widget then
     body_height = inner_height - header_height - self.header_spacing
-    if body_height < 1 then
-      body_height = 1
-    end
+  end
+  body_height = body_height - related_buttons_height - related_buttons_spacing
+  if body_height < 1 then
+    body_height = 1
   end
 
   -- TextBoxWidget may shrink an oversized image descriptor without shrinking
@@ -615,16 +675,18 @@ function AIViewer:init()
     end
   end
 
-  local text_group = nil
+  local text_group_items = {}
   if header_widget then
-    text_group = VerticalGroup:new {
-      header_widget,
-      VerticalSpan:new { height = self.header_spacing },
-      self.scroll_text_w,
-    }
-  else
-    text_group = self.scroll_text_w
+    table.insert(text_group_items, header_widget)
+    table.insert(text_group_items, VerticalSpan:new { height = self.header_spacing })
   end
+  table.insert(text_group_items, self.scroll_text_w)
+  if related_button_table then
+    table.insert(text_group_items, VerticalSpan:new { height = related_buttons_spacing })
+    table.insert(text_group_items, related_button_table)
+  end
+  local text_group = #text_group_items == 1 and self.scroll_text_w
+      or VerticalGroup:new(text_group_items)
 
   self.textw = FrameContainer:new {
     padding_left = text_padding_h,
@@ -968,8 +1030,11 @@ function AIViewer:update(new_text, new_header_text, options)
     width = self.width,
     height = self.height,
     buttons_table = self.buttons_table,
+    add_default_buttons = self.add_default_buttons,
     onAskQuestion = self.onAskQuestion,
     onPronunciation = self.onPronunciation,
+    onRelatedTerm = options.on_related_term or self.onRelatedTerm,
+    related_terms = options.related_terms ~= nil and options.related_terms or self.related_terms,
     benedict = self.benedict,
     tts_request = self.tts_request,
     user_scroll_enabled = options.user_scroll_enabled ~= nil and options.user_scroll_enabled or self.user_scroll_enabled,

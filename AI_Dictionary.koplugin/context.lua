@@ -218,6 +218,9 @@ function Context.build_query_context(plugin, reader_highlight_instance, dialog_t
     viewer_position = Context.get_viewer_position(reader_highlight_instance, selection_bounds),
     selected_text = safe_highlighted_text,
     selection_context = safe_selection_in_context,
+    book_title = clean_up_string(title, MAX_TITLE),
+    book_author = clean_up_string(author, MAX_TITLE),
+    chapter_clause = clean_up_string(chapter_clause, MAX_TITLE),
   }
 end
 

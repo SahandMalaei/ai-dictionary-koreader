@@ -19,7 +19,7 @@ local METADATA_CLOSE = "</aidictionary-wikipedia>"
 
 WikipediaImage.prompt_suffix = [[
 
-Before the user-visible answer, output exactly one metadata line in this form:
+Before the user-visible answer, output this machine-readable metadata line in this form:
 <aidictionary-wikipedia>English Wikipedia-style FULL title plus disambiguation hint if necessary (e.g. (Video Game)) or None</aidictionary-wikipedia>
 Choose a title only when the selected text can be represented accurately by one specific subject that definitely has an English Wikipedia article with a representative lead image (strong candidates: famous people, tools, companies, games, movies, books, food items, animals and vegetables). Otherwise use None. Output this metadata line first, then follow all the original answer instructions exactly.]]
 
