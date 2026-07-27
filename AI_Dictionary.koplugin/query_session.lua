@@ -88,24 +88,35 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
     repaint_now()
   end
 
-  local function keep_empty_image_box()
-    if not session or session.cancelled or not session.current_viewer then return end
-    WikipediaImage.clear_placeholder(session.image_descriptor)
-    refresh_current_viewer()
-  end
-
   local function schedule_wikipedia_image(title)
     if not session or session.image_lookup_scheduled or not title then return end
     session.image_lookup_scheduled = true
     local placeholder = WikipediaImage.new_placeholder(title, true)
+    -- Decode the bundled fallback before starting the asynchronous lookup.
+    -- On some devices, waiting until an error callback to decode it can leave
+    -- the already-reserved image area blank if that callback itself fails.
+    local no_image_placeholder =
+        WikipediaImage.from_file(session.no_image_placeholder_path, title)
+    local lookup_finished = false
+
+    local function release_no_image_placeholder()
+      WikipediaImage.free(no_image_placeholder)
+      no_image_placeholder = nil
+    end
+
     session.image_descriptor = placeholder
     session.current_viewer.images = { placeholder }
     refresh_current_viewer()
 
     local image_data = nil
     local function finish_image_lookup()
+      if lookup_finished then return end
+      lookup_finished = true
       session.image_lookup_cancel = nil
-      if session.cancelled then return end
+      if session.cancelled then
+        release_no_image_placeholder()
+        return
+      end
       local image = image_data and WikipediaImage.from_data(image_data, title) or nil
       if not image and session.image_download_path then
         image = WikipediaImage.from_file(session.image_download_path, title)
@@ -117,11 +128,20 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       end
       if not image then
         is_placeholder = true
-        image = WikipediaImage.from_file(session.no_image_placeholder_path, title)
+        image = no_image_placeholder
+        no_image_placeholder = nil
+        -- Retry once in case the eager decode failed for a transient reason.
         if not image then
-          keep_empty_image_box()
+          image = WikipediaImage.from_file(session.no_image_placeholder_path, title)
+        end
+        if not image then
+          -- Keep the outlined loading descriptor instead of clearing it into
+          -- an entirely blank reserved area.
+          refresh_current_viewer()
           return
         end
+      else
+        release_no_image_placeholder()
       end
       local old_bb = placeholder.bb
       placeholder.bb = image.bb
@@ -192,6 +212,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
         if cancelled then return end
         cancelled = true
         if current_cancel then current_cancel() end
+        release_no_image_placeholder()
         if session.image_download_path then
           os.remove(session.image_download_path)
           session.image_download_path = nil
@@ -200,7 +221,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       return
     end
 
-    session.image_lookup_cancel = BackgroundWorker.start(function(emit)
+    local cancel_background_lookup = BackgroundWorker.start(function(emit)
       local data = WikipediaImage.download(title)
       if data then emit(data) end
     end, {
@@ -212,6 +233,10 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
         finish_image_lookup()
       end),
     })
+    session.image_lookup_cancel = function()
+      cancel_background_lookup()
+      release_no_image_placeholder()
+    end
   end
 
   local function visible_response(response)
@@ -469,7 +494,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
 
       local prompt = DeepDive.build_prompt(session.deep_dive_path)
       if image_protocol then
-        prompt = prompt .. WikipediaImage.prompt_suffix
+        prompt = prompt .. WikipediaImage.prompt_suffix_for_deep_dive(term)
       end
       prompt = prompt .. output_language_suffix()
       session.message_history[#session.message_history + 1] = {

@@ -17,11 +17,24 @@ local BUFFER_WIDTH = BOX_SIZE + TEXT_PADDING_LEFT
 local METADATA_OPEN = "<aidictionary-wikipedia>"
 local METADATA_CLOSE = "</aidictionary-wikipedia>"
 
-WikipediaImage.prompt_suffix = [[
+local function build_prompt_suffix(subject)
+  return [[
 
 Before the user-visible answer, output exactly one metadata line in this form:
 <aidictionary-wikipedia>English Wikipedia-style FULL title plus disambiguation hint if necessary (e.g. (Video Game)) or None</aidictionary-wikipedia>
-Choose a title only when the selected text can be represented accurately by one specific subject that definitely has an English Wikipedia article with a representative lead image (strong candidates: famous people, tools, companies, games, movies, books, food items, animals and vegetables). Otherwise use None. Output this metadata line first, then follow all the original answer instructions exactly.]]
+Choose a title only when ]] .. subject .. [[ can be represented accurately by one specific subject that definitely has an English Wikipedia article with a representative lead image (strong candidates: famous people, tools, companies, games, movies, books, food items, animals and vegetables). Otherwise use None. Output this metadata line first, then follow all the original answer instructions exactly.]]
+end
+
+WikipediaImage.prompt_suffix = build_prompt_suffix("the selected text")
+
+function WikipediaImage.prompt_suffix_for_deep_dive(focus)
+  focus = tostring(focus or ""):gsub("[%c%s]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  if focus == "" then return WikipediaImage.prompt_suffix end
+  return build_prompt_suffix(
+    'the current deep-dive focus "' .. focus ..
+    '" (not the original selected text or any previous step)'
+  )
+end
 
 function WikipediaImage.required_viewport_height()
   -- TextBoxWidget limits an image to half of its viewport.
@@ -258,7 +271,12 @@ function WikipediaImage.from_data(data, title)
     if source_bb and source_bb.free then source_bb:free() end
     return nil
   end
-  return make_boxed_image(source_bb, title)
+  local boxed_ok, image = pcall(make_boxed_image, source_bb, title)
+  if not boxed_ok then
+    if source_bb.free then source_bb:free() end
+    return nil
+  end
+  return image
 end
 
 function WikipediaImage.from_file(path, title)
@@ -268,7 +286,12 @@ function WikipediaImage.from_file(path, title)
     if source_bb and source_bb.free then source_bb:free() end
     return nil
   end
-  return make_boxed_image(source_bb, title)
+  local boxed_ok, image = pcall(make_boxed_image, source_bb, title)
+  if not boxed_ok then
+    if source_bb.free then source_bb:free() end
+    return nil
+  end
+  return image
 end
 
 return WikipediaImage
