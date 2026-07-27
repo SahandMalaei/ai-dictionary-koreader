@@ -10,7 +10,7 @@ Displays some text in a scrollable view.
 ]]
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
-local ButtonTable = require("ui/widget/buttontable")
+local Button = require("ui/widget/button")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local CheckButton = require("ui/widget/checkbutton")
 local Device = require("device")
@@ -18,13 +18,16 @@ local Geom = require("ui/geometry")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local GestureRange = require("ui/gesturerange")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
+local HorizontalSpan = require("ui/widget/horizontalspan")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local InputDialog = require("ui/widget/inputdialog")
-local LineWidget = require("ui/widget/linewidget")
 local MovableContainer = require("ui/widget/container/movablecontainer")
 local Notification = require("ui/widget/notification")
+local OverlapGroup = require("ui/widget/overlapgroup")
 local ScrollTextWidget = require("ui/widget/scrolltextwidget")
 local TextBoxWidget = require("ui/widget/textboxwidget")
+local TextWidget = require("ui/widget/textwidget")
 local Size = require("ui/size")
 local TitleBar = require("ui/widget/titlebar")
 local UIManager = require("ui/uimanager")
@@ -78,13 +81,14 @@ end
 -- Change this value to adjust how many body text lines the bottom sheet reserves.
 local DEFAULT_BOTTOM_SHEET_BODY_LINES = 12
 
--- Change this value to adjust the bottom panel's top button row height later.
--- 0.75 means 75% of the normal KOReader ButtonTable text/content height.
+-- Change this value to adjust the bottom panel's inline control size.
 local DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE = 0.95
 local DEFAULT_BOTTOM_SHEET_EDGE_PADDING = Screen:scaleBySize(12)
 local DEFAULT_BOTTOM_SHEET_SELECTION_PADDING = Screen:scaleBySize(5)
 local DEFAULT_ROUNDEDNESS_SIZE = Screen:scaleBySize(0)
-local DEFAULT_BUTTON_ROUNDEDNESS_SIZE = 0
+local PTF_HEADER = "\u{FFF1}"
+local PTF_BOLD_START = "\u{FFF2}"
+local PTF_BOLD_END = "\u{FFF3}"
 
 local function scale_size(value, scale, minimum)
   return math.max(minimum or 0, math.floor(value * scale + 0.5))
@@ -122,19 +126,11 @@ local function measure_text_line_height(args)
   return line_height
 end
 
-local function set_button_table_radius(button_table, radius)
-  if not button_table or not button_table.buttons_layout then
-    return
-  end
-  for _, row in ipairs(button_table.buttons_layout) do
-    for _, button in ipairs(row) do
-      if button.frame then
-        button.frame.radius = radius
-      elseif button[1] then
-        button[1].radius = radius
-      end
-    end
-  end
+local function plain_header_text(text)
+  return tostring(text or "")
+      :gsub(PTF_HEADER, "")
+      :gsub(PTF_BOLD_START, "")
+      :gsub(PTF_BOLD_END, "")
 end
 
 local function make_image_viewer_provider(source_bb)
@@ -171,7 +167,6 @@ local AIViewer = InputContainer:extend {
   text = nil,
   width = nil,
   height = nil,
-  buttons_table = nil,
   -- See TextBoxWidget for details about these options
   -- We default to justified and auto_para_direction to adapt
   -- to any kind of text we are given (book descriptions,
@@ -195,11 +190,7 @@ local AIViewer = InputContainer:extend {
   fgcolor = Blitbuffer.COLOR_BLACK,
   text_padding = Size.padding.large,
   text_margin = Size.margin.small,
-  button_padding = Size.padding.default,
   default_button_fgcolor = Blitbuffer.Color8(0x22),
-  -- Bottom row with Close, Find buttons. Also added when no caller's buttons defined.
-  add_default_buttons = nil,
-  default_hold_callback = nil,   -- on each default button
   find_centered_lines_count = 5, -- line with find results to be not far from the center
 
   onAskQuestion = nil,
@@ -258,17 +249,6 @@ function AIViewer:init()
     self.key_events.Close = { { Device.input.group.Back } }
   end
 
-  local top_separator_height = 0
-  local button_separator = nil
-  local button_separator_height = 0
-  if self.bottom_sheet then
-    button_separator_height = (Size.line and Size.line.thin) or 1
-    button_separator = LineWidget:new {
-      dimen = Geom:new { w = self.width, h = button_separator_height },
-      background = Blitbuffer.COLOR_GRAY,
-    }
-  end
-
   local titlebar = nil
   local titlebar_height = 0
   if not self.bottom_sheet then
@@ -286,123 +266,6 @@ function AIViewer:init()
     titlebar_height = titlebar:getHeight()
   end
 
-  -- Callback to enable/disable buttons, for at-top/at-bottom feedback
-  local prev_at_top = false -- Buttons were created enabled
-  local prev_at_bottom = false
-  local function button_update(id, enable)
-    local button = self.button_table:getButtonById(id)
-    if button then
-      if enable then
-        button:enable()
-      else
-        button:disable()
-      end
-      button:refresh()
-    end
-  end
-  self._buttons_scroll_callback = function(low, high)
-    if prev_at_top and low > 0 then
-      button_update("top", true)
-      prev_at_top = false
-    elseif not prev_at_top and low <= 0 then
-      button_update("top", false)
-      prev_at_top = true
-    end
-    if prev_at_bottom and high < 1 then
-      button_update("bottom", true)
-      prev_at_bottom = false
-    elseif not prev_at_bottom and high >= 1 then
-      button_update("bottom", false)
-      prev_at_bottom = true
-    end
-  end
-
-  -- buttons
-  local default_buttons =
-  {
-    {
-      text = _("↻"),
-      callback = function()
-        self:Regenerate()
-      end,
-      hold_callback = self.default_hold_callback,
-    },
-  }
-  if self.onPronunciation then
-    table.insert(default_buttons, {
-      text = _("🔉"),
-      callback = function()
-        self.onPronunciation()
-      end,
-      hold_callback = self.default_hold_callback,
-    })
-  end
-  table.insert(default_buttons, {
-    text = _("✕"),
-    callback = function()
-      self:onClose()
-    end,
-    hold_callback = self.default_hold_callback,
-  })
-  if self.bottom_sheet then
-    local button_height_scale = self.bottom_sheet_button_height_scale or DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE
-    local button_font_size = scale_size(20, button_height_scale, 1)
-    local button_content_height = Screen:scaleBySize(button_font_size)
-    for _, button in ipairs(default_buttons) do
-      button.font_size = button.font_size or button_font_size
-      button.height = button.height or button_content_height
-    end
-  end
-  local buttons = self.buttons_table or {}
-  local default_buttons_row_index = nil
-  if self.add_default_buttons or not self.buttons_table then
-    default_buttons_row_index = #buttons + 1
-    table.insert(buttons, default_buttons)
-  end
-  local button_table_width = self.width - 2 * self.button_padding
-  local button_table_sep_width = nil
-  local button_table_zero_sep = not self.bottom_sheet
-  local function make_button_table()
-    return ButtonTable:new {
-      width = button_table_width,
-      buttons = buttons,
-      sep_width = button_table_sep_width,
-      zero_sep = button_table_zero_sep,
-      show_parent = self,
-    }
-  end
-  if self.bottom_sheet then
-    local button_height_scale = self.bottom_sheet_button_height_scale or DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE
-    local original_buttontable_padding = Size.padding.buttontable
-    local original_vertical_span = Size.span.vertical_default
-    Size.padding.buttontable = scale_size(original_buttontable_padding, button_height_scale)
-    Size.span.vertical_default = scale_size(original_vertical_span, button_height_scale)
-    button_table_sep_width = scale_size(Size.line.medium, button_height_scale, 1)
-    local ok, button_table = pcall(make_button_table)
-    Size.padding.buttontable = original_buttontable_padding
-    Size.span.vertical_default = original_vertical_span
-    if not ok then
-      error(button_table)
-    end
-    self.button_table = button_table
-  else
-    self.button_table = make_button_table()
-  end
-  set_button_table_radius(self.button_table, DEFAULT_BUTTON_ROUNDEDNESS_SIZE)
-  if default_buttons_row_index and self.default_button_fgcolor then
-    local default_buttons_row = self.button_table.buttons_layout and self.button_table.buttons_layout[default_buttons_row_index]
-    if default_buttons_row then
-      for _, button in ipairs(default_buttons_row) do
-        if button.text and button.label_widget then
-          button.label_widget.fgcolor = self.default_button_fgcolor
-          if button.label_widget.update then
-            button.label_widget:update()
-          end
-        end
-      end
-    end
-  end
-
   local text_padding_h = self.text_padding
   local text_padding_v = self.text_padding
   if self.bottom_sheet then
@@ -410,27 +273,89 @@ function AIViewer:init()
   end
   local inner_width = self.width - 2 * text_padding_h - 2 * self.text_margin
   local inner_height = 1
-  local header_widget = nil
+  local control_bar = nil
   local header_height = 0
+  local button_scale = self.bottom_sheet and
+      (self.bottom_sheet_button_height_scale or DEFAULT_BOTTOM_SHEET_BUTTON_HEIGHT_SCALE) or 1
+  local button_font_size = scale_size(20, button_scale, 1)
+  local function make_inline_button(text, callback)
+    local button = Button:new {
+      text = text,
+      callback = callback,
+      bordersize = 0,
+      padding_h = Size.padding.small,
+      padding_v = Size.padding.small,
+      radius = 0,
+      text_font_size = button_font_size,
+      text_font_bold = false,
+      show_parent = self,
+    }
+    if self.default_button_fgcolor and button.label_widget then
+      button.label_widget.fgcolor = self.default_button_fgcolor
+    end
+    return button
+  end
+
+  local regenerate_button = make_inline_button(_("↻"), function()
+    self:Regenerate()
+  end)
+  regenerate_button.overlap_align = "right"
+
+  local left_controls = nil
   if self.header_text and self.header_text ~= "" then
+    local pronunciation_button = nil
+    if self.onPronunciation then
+      pronunciation_button = make_inline_button(_("🔉"), function()
+        self.onPronunciation()
+      end)
+    end
+    local pronunciation_width = pronunciation_button and pronunciation_button:getSize().w or 0
+    local controls_gap = Size.padding.small
+    local available_header_width = math.max(
+      1,
+      inner_width - regenerate_button:getSize().w - pronunciation_width - 2 * controls_gap
+    )
     local base_font = self.text_face and self.text_face.orig_font or "xx_smallinfofont"
     local base_size = self.text_face and self.text_face.orig_size or Font.sizemap.xx_smallinfofont
     local header_face = self.header_face or Font:getFace(base_font, math.floor(base_size * 1.3 + 0.5))
-    header_widget = TextBoxWidget:new {
-      text = self.header_text,
+    local header_widget = TextWidget:new {
+      text = plain_header_text(self.header_text),
       face = header_face,
+      bold = true,
       fgcolor = self.fgcolor,
-      width = inner_width,
-      dialog = self,
-      alignment = self.alignment,
-      justified = false,
+      max_width = available_header_width,
       lang = self.lang,
       para_direction_rtl = self.para_direction_rtl,
       auto_para_direction = self.auto_para_direction,
-      alignment_strict = self.alignment_strict,
     }
-    header_height = header_widget:getSize().h
+    left_controls = HorizontalGroup:new {
+      align = "center",
+      allow_mirroring = false,
+      header_widget,
+    }
+    if pronunciation_button then
+      table.insert(left_controls, HorizontalSpan:new { width = controls_gap })
+      table.insert(left_controls, pronunciation_button)
+    end
   end
+
+  local control_widgets = {}
+  if left_controls then
+    table.insert(control_widgets, left_controls)
+  end
+  table.insert(control_widgets, regenerate_button)
+  control_bar = OverlapGroup:new {
+    allow_mirroring = false,
+    dimen = Geom:new {
+      w = inner_width,
+      h = math.max(
+        left_controls and left_controls:getSize().h or 0,
+        regenerate_button:getSize().h
+      ),
+    },
+    unpack(control_widgets),
+  }
+  header_height = control_bar:getSize().h
 
   local body_line_height = measure_text_line_height {
     face = self.text_face,
@@ -446,7 +371,7 @@ function AIViewer:init()
   }
 
   local textw_height
-  local non_text_height = top_separator_height + button_separator_height + titlebar_height + self.button_table:getSize().h
+  local non_text_height = titlebar_height
   if self.bottom_sheet then
     local minimum_sheet_height = non_text_height + 1
     local body_lines = math.max(1, self.bottom_sheet_body_lines or DEFAULT_BOTTOM_SHEET_BODY_LINES)
@@ -464,9 +389,7 @@ function AIViewer:init()
       end
     end
     textw_height = requested_body_height + 2 * text_padding_v + 2 * self.text_margin
-    if header_widget then
-      textw_height = textw_height + header_height + self.header_spacing
-    end
+    textw_height = textw_height + header_height + self.header_spacing
     self.height = textw_height + non_text_height
     if self.height > bottom_sheet_max_height then
       self.height = math.max(minimum_sheet_height, bottom_sheet_max_height)
@@ -510,11 +433,9 @@ function AIViewer:init()
   end
 
   local body_height = inner_height
-  if header_widget then
-    body_height = inner_height - header_height - self.header_spacing
-    if body_height < 1 then
-      body_height = 1
-    end
+  body_height = inner_height - header_height - self.header_spacing
+  if body_height < 1 then
+    body_height = 1
   end
 
   -- TextBoxWidget may shrink an oversized image descriptor without shrinking
@@ -606,7 +527,6 @@ function AIViewer:init()
     para_direction_rtl = self.para_direction_rtl,
     auto_para_direction = self.auto_para_direction,
     alignment_strict = self.alignment_strict,
-    scroll_callback = self._buttons_scroll_callback,
   }
   if self.images and self.scroll_text_w.text_widget then
     local text_widget = self.scroll_text_w.text_widget
@@ -615,16 +535,11 @@ function AIViewer:init()
     end
   end
 
-  local text_group = nil
-  if header_widget then
-    text_group = VerticalGroup:new {
-      header_widget,
-      VerticalSpan:new { height = self.header_spacing },
-      self.scroll_text_w,
-    }
-  else
-    text_group = self.scroll_text_w
-  end
+  local text_group = VerticalGroup:new {
+    control_bar,
+    VerticalSpan:new { height = self.header_spacing },
+    self.scroll_text_w,
+  }
 
   self.textw = FrameContainer:new {
     padding_left = text_padding_h,
@@ -638,13 +553,6 @@ function AIViewer:init()
 
   local frame_widgets = {}
   if self.bottom_sheet then
-    local button_row = CenterContainer:new {
-      dimen = Geom:new {
-        w = self.width,
-        h = self.button_table:getSize().h,
-      },
-      self.button_table,
-    }
     if self.bottom_sheet_position == "top" then
       table.insert(frame_widgets, CenterContainer:new {
         dimen = Geom:new {
@@ -653,11 +561,6 @@ function AIViewer:init()
         },
         self.textw,
       })
-      table.insert(frame_widgets, button_separator)
-      table.insert(frame_widgets, button_row)
-    else
-      table.insert(frame_widgets, button_row)
-      table.insert(frame_widgets, button_separator)
     end
   else
     table.insert(frame_widgets, titlebar)
@@ -671,16 +574,6 @@ function AIViewer:init()
       self.textw,
     })
   end
-  if not self.bottom_sheet then
-    table.insert(frame_widgets, CenterContainer:new {
-      dimen = Geom:new {
-        w = self.width,
-        h = self.button_table:getSize().h,
-      },
-      self.button_table,
-    })
-  end
-
   self.frame = FrameContainer:new {
     radius = DEFAULT_ROUNDEDNESS_SIZE,
     bordersize = self.bottom_sheet and bottom_sheet_border_size or nil,
@@ -967,7 +860,6 @@ function AIViewer:update(new_text, new_header_text, options)
     header_text = new_header_text or self.header_text,
     width = self.width,
     height = self.height,
-    buttons_table = self.buttons_table,
     onAskQuestion = self.onAskQuestion,
     onPronunciation = self.onPronunciation,
     benedict = self.benedict,
