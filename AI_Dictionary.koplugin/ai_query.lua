@@ -43,16 +43,23 @@ local ENDPOINT_PROFILES = {
   {
     id = "openai",
     supports_verbosity = true,
-    default_reasoning_effort = "minimal",
+    default_reasoning_effort = "medium",
     matches = function(url)
       return urlContains(url, "api.openai.com")
+    end,
+  },
+  {
+    id = "groq",
+    default_reasoning_effort = "medium",
+    matches = function(url)
+      return urlContains(url, "api.groq.com")
     end,
   },
   {
     id = "openrouter",
     supports_verbosity = true,
     supports_request_parameters = true,
-    default_reasoning_effort = "none",
+    default_reasoning_effort = "medium",
     matches = function(url)
       return urlContains(url, "openrouter.ai")
     end,
@@ -65,7 +72,7 @@ local ENDPOINT_PROFILES = {
 }
 
 local DEFAULT_ENDPOINT_PROFILE = {
-  id = "openai_compatible",
+  id = "groq",
 }
 
 local function getEndpointProfile(api_url, configuration)
@@ -173,8 +180,8 @@ local function applyDefaultParameters(requestBodyTable, endpointProfile, request
     copyParameters(requestBodyTable, request_parameters)
   end
 
-  if requestBodyTable.reasoning_effort == nil then
-    requestBodyTable.reasoning_effort = endpointProfile.default_reasoning_effort or "none"
+ if endpointProfile.default_reasoning_effort and requestBodyTable.reasoning_effort == nil then
+    requestBodyTable.reasoning_effort = endpointProfile.default_reasoning_effort
   end
 
   if endpointProfile.supports_verbosity and requestBodyTable.verbosity == nil then
@@ -193,7 +200,7 @@ local function buildRequestBody(message_history, configuration, request_paramete
   }
 
   copyParameters(requestBodyTable, configuration and configuration.additional_parameters)
-
+  
   applyDefaultParameters(requestBodyTable, endpointProfile, request_parameters)
   requestBodyTable.stream = true
 
