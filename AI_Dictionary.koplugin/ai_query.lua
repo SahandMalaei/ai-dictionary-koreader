@@ -173,8 +173,8 @@ local function applyDefaultParameters(requestBodyTable, endpointProfile, request
     copyParameters(requestBodyTable, request_parameters)
   end
 
-  if requestBodyTable.reasoning_effort == nil then
-    requestBodyTable.reasoning_effort = endpointProfile.default_reasoning_effort or "none"
+  if endpointProfile.default_reasoning_effort and requestBodyTable.reasoning_effort == nil then
+    requestBodyTable.reasoning_effort = endpointProfile.default_reasoning_effort
   end
 
   if endpointProfile.supports_verbosity and requestBodyTable.verbosity == nil then
