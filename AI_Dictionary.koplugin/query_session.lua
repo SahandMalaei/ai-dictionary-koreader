@@ -386,7 +386,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   local session = {
     cancelled = false,
     image_protocol = image_protocol,
-    no_image_placeholder_path = plugin.path .. "/resources/no-image-placeholder.jpg",
+    no_image_placeholder_path = plugin.path .. "/Resources/no-image-placeholder.jpg",
     plugin_path = plugin.path,
   }
   local tts_request = nil
@@ -586,7 +586,7 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
     cancelled = false,
     image_protocol = state.last_image_protocol,
     current_viewer = updated_viewer,
-    no_image_placeholder_path = plugin.path .. "/resources/no-image-placeholder.jpg",
+    no_image_placeholder_path = plugin.path .. "/Resources/no-image-placeholder.jpg",
     plugin_path = plugin.path,
   }
   updated_viewer.auxiliary_cancel = ErrorBoundary.wrap("cancel regenerated session", function()
