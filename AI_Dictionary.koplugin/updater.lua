@@ -27,10 +27,12 @@ http.TIMEOUT = REQUEST_TIMEOUT_SECONDS
 local Updater = {}
 
 local function show_message(text, timeout)
-  UIManager:show(InfoMessage:new {
+  local message = InfoMessage:new {
     text = text,
     timeout = timeout or 3,
-  })
+  }
+  UIManager:show(message)
+  return message
 end
 
 local function path_join(...)
@@ -427,9 +429,15 @@ function Updater:promptForUpdate(current_version, latest_version, tag_name)
     ok_text = "Update",
     ok_callback = ErrorBoundary.wrap("start plugin update", function()
       mark_interacted()
-      show_message("Updating AI Dictionary...", 2)
+      local updating_message = show_message("Updating AI Dictionary...", 2)
       UIManager:scheduleIn(0.1, ErrorBoundary.wrap("plugin update", function()
-        local ok, err = self:updateToTag(tag_name)
+        local ok, err = ErrorBoundary.call(
+          "apply plugin update",
+          self.updateToTag,
+          self,
+          tag_name
+        )
+        UIManager:close(updating_message)
         if ok then
           self:showRestartDialog()
         else
