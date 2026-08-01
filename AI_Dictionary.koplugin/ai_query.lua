@@ -26,7 +26,7 @@ local Device = require("device")
 local AndroidHttpWorker = require("android_http_worker")
 local BackgroundWorker = require("background_worker")
 
-local REQUEST_TIMEOUT_SECONDS = 20
+local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 
 https.TIMEOUT = REQUEST_TIMEOUT_SECONDS
 http.TIMEOUT = REQUEST_TIMEOUT_SECONDS

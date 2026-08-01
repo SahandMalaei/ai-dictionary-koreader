@@ -12,7 +12,7 @@ local util = require("util")
 
 local ErrorBoundary = require("error_boundary")
 
-local REQUEST_TIMEOUT_SECONDS = 10
+local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 local UPDATE_PROMPT_COOLDOWN_SECONDS = 7 * 24 * 60 * 60
 local LAST_UPDATE_PROMPT_INTERACTION_SETTING =
     "ai_dictionary_last_update_prompt_interaction"

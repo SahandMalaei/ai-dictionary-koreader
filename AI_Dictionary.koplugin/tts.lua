@@ -4,6 +4,7 @@ local AudioPlayer = require("audio_player")
 local AndroidHttpWorker = require("android_http_worker")
 local BackgroundWorker = require("background_worker")
 local Pronunciation = require("pronunciation")
+local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 
 local TTS = {}
 
@@ -126,7 +127,7 @@ function TTS.start_request(tts_request, play_when_ready)
       accept = request.accept,
       body = request.body,
       output_path = target_audio_path,
-      timeout_seconds = 45,
+      timeout_seconds = REQUEST_TIMEOUT_SECONDS,
     }, {
       on_complete = function(code)
         if code ~= 200 then

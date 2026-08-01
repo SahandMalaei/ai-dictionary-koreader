@@ -3,6 +3,7 @@ local FFIUtil = require("ffi/util")
 local UIManager = require("ui/uimanager")
 local ffi = require("ffi")
 local logger = require("logger")
+local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 
 local AndroidHttpWorker = {}
 
@@ -276,7 +277,7 @@ local function start_java_request(android, options)
       strings[6],
       strings[7],
       strings[8],
-      ffi.new("int", math.floor((options.timeout_seconds or 30) * 1000))
+      ffi.new("int", math.floor((options.timeout_seconds or REQUEST_TIMEOUT_SECONDS) * 1000))
     )
     for _, value in ipairs(strings) do env[0].DeleteLocalRef(env, value) end
     if check_exception(env) then return -1 end

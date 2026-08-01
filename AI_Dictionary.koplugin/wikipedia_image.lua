@@ -8,7 +8,7 @@ local socket_url = require("socket.url")
 
 local WikipediaImage = {}
 
-local REQUEST_TIMEOUT_SECONDS = 15
+local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 local MAX_IMAGE_BYTES = 8 * 4096 * 4096
 local BOX_SIZE = math.max(1, math.floor(math.min(Screen:getWidth(), Screen:getHeight()) * 0.2 + 0.5))
 local BORDER_SIZE = 1

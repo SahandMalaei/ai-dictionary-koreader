@@ -9,6 +9,7 @@ local Context = require("context")
 local Config = require("configuration_manager")
 local DeepDive = require("deep_dive")
 local ErrorBoundary = require("error_boundary")
+local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 local TTS = require("tts")
 local queryAI = require("ai_query")
 local LookupsLogWriter = require("lookups_log_writer")
@@ -165,7 +166,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
         method = "GET",
         accept = "application/json",
         user_agent = "AI-Dictionary-KOReader/experimental-wikipedia-image",
-        timeout_seconds = 15,
+        timeout_seconds = REQUEST_TIMEOUT_SECONDS,
       }, {
         on_complete = function(code, body)
           if cancelled or code ~= 200 then
@@ -185,7 +186,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
             accept = "image/*",
             user_agent = "AI-Dictionary-KOReader/experimental-wikipedia-image",
             output_path = session.image_download_path,
-            timeout_seconds = 15,
+            timeout_seconds = REQUEST_TIMEOUT_SECONDS,
           }, {
             on_complete = function(image_code)
               if image_code == 200 then
