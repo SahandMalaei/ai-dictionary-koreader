@@ -1,4 +1,3 @@
-local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 local Device = require("device")
 
@@ -12,13 +11,12 @@ local DeepDive = require("deep_dive")
 local ErrorBoundary = require("error_boundary")
 local TTS = require("tts")
 local queryAI = require("ai_query")
-local save_lookup_entry = require("lookups_log")
+local LookupsLogWriter = require("lookups_log_writer")
 local WikipediaImage = require("wikipedia_image")
 
 local QuerySession = {}
 
 local STREAM_UPDATE_TOKEN_INTERVAL = 10
-local OFFLINE_WAIT_MESSAGE = "You are offline. AI lookup requires an active internet connection."
 local ONLINE_WAIT_MESSAGE = "Getting the answer..."
 
 local function output_language_suffix()
@@ -52,13 +50,6 @@ local function close_selection_highlight(ui, keep_highlight)
   if ui and ui.highlight and type(ui.highlight.onClose) == "function" then
     ui.highlight:onClose(keep_highlight)
   end
-end
-
-local function wait_message()
-  if NetworkMgr:isOnline() then
-    return ONLINE_WAIT_MESSAGE
-  end
-  return OFFLINE_WAIT_MESSAGE
 end
 
 local function resolve_query(query, replacements)
@@ -400,7 +391,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
 
   local chatgpt_viewer = AIViewer:new {
     title = dialog_title,
-    text = wait_message(),
+    text = ONLINE_WAIT_MESSAGE,
     header_text = initial_header_text,
     onAskQuestion = nil,
     onPronunciation = tts_request and function()
@@ -408,7 +399,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     end or nil,
     benedict = plugin,
     tts_request = tts_request,
-    user_scroll_enabled = not NetworkMgr:isOnline(),
+    user_scroll_enabled = false,
     bottom_sheet = true,
     bottom_sheet_position = context.viewer_position,
     bottom_sheet_min_body_height = image_protocol and WikipediaImage.required_viewport_height() or nil,
@@ -446,10 +437,6 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   state.last_is_dictionary = is_dictionary_query
   state.last_image_protocol = image_protocol
 
-  if not NetworkMgr:isOnline() then
-    return
-  end
-
   session.message_history = {
     {
       role = "user",
@@ -478,8 +465,8 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       if viewer then
         viewer.images = nil
         viewer.stream_cancel = nil
-        viewer = viewer:update(wait_message(), nil, {
-          user_scroll_enabled = not NetworkMgr:isOnline(),
+        viewer = viewer:update(ONLINE_WAIT_MESSAGE, nil, {
+          user_scroll_enabled = false,
           on_deep_dive = false,
         })
         session.current_viewer = viewer
@@ -502,7 +489,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
         content = prompt,
       }
 
-      if not NetworkMgr:isOnline() or not viewer then return end
+      if not viewer then return end
 
       QuerySession.stream_answer(
         viewer,
@@ -530,7 +517,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
 
     QuerySession.stream_answer(chatgpt_viewer, session.message_history, is_dictionary_query, context.display_selection, preface_with_selection, function(answer)
       if is_dictionary_query and answer and answer ~= "" then
-        save_lookup_entry(plugin.path, context.selected_text, context.selection_context)
+        LookupsLogWriter.enqueue(plugin.path, context.selected_text, context.selection_context)
       end
       if is_explain_query then
         session.message_history[#session.message_history + 1] = {
@@ -567,7 +554,6 @@ function QuerySession.start_report(report_viewer, report_prompt)
 end
 
 function QuerySession.regenerate(plugin, chatgpt_viewer)
-  local online = NetworkMgr:isOnline()
   local tts_request = chatgpt_viewer.tts_request
   if chatgpt_viewer.stream_cancel then
     chatgpt_viewer.stream_cancel()
@@ -579,7 +565,7 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
   end
   local old_images = chatgpt_viewer.images
   chatgpt_viewer.images = nil
-  local updated_viewer = chatgpt_viewer:update(wait_message(), nil, { user_scroll_enabled = not online })
+  local updated_viewer = chatgpt_viewer:update(ONLINE_WAIT_MESSAGE, nil, { user_scroll_enabled = false })
   WikipediaImage.free(old_images and old_images[1])
 
   local session = {
@@ -597,10 +583,6 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
     TTS.cancel(tts_request)
     WikipediaImage.free(session.image_descriptor)
   end)
-
-  if not online then
-    return
-  end
 
   session.query_start_action = ErrorBoundary.wrap("start regenerated query stream", function()
     session.query_start_action = nil

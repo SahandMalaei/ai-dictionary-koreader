@@ -66,20 +66,19 @@ end
 local function save_lookup_entry(plugin_path, lookup, context)
   lookup = tostring(lookup or ""):gsub("^%s+", ""):gsub("%s+$", "")
   if lookup == "" then
-    return
+    return true
   end
 
   local lookups_dir = path_join(get_plugin_path(plugin_path), LOOKUPS_DIR_NAME)
   local ok, err = ensure_dir(lookups_dir)
   if not ok then
-    print("Could not create lookup log directory: " .. tostring(err))
-    return
+    return nil, "Could not create lookup log directory: " .. tostring(err)
   end
 
   local lookups_file = path_join(lookups_dir, LOOKUPS_FILE_NAME)
   local old_contents = read_file(lookups_file)
   if first_logged_lookup(old_contents) == lookup then
-    return
+    return true
   end
 
   local entry = "Time: " .. os.date("%Y-%m-%d") .. "\n"
@@ -92,12 +91,18 @@ local function save_lookup_entry(plugin_path, lookup, context)
 
   local file, write_err = io.open(lookups_file, "w")
   if not file then
-    print("Could not write lookup log: " .. tostring(write_err))
-    return
+    return nil, "Could not write lookup log: " .. tostring(write_err)
   end
 
-  file:write(entry)
-  file:close()
+  local write_ok, entry_write_err = file:write(entry)
+  local close_ok, close_err = file:close()
+  if not write_ok then
+    return nil, "Could not write lookup log: " .. tostring(entry_write_err)
+  end
+  if not close_ok then
+    return nil, "Could not close lookup log: " .. tostring(close_err)
+  end
+  return true
 end
 
 return save_lookup_entry
