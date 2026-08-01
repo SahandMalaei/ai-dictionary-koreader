@@ -12,7 +12,7 @@ local ErrorBoundary = require("error_boundary")
 local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 local TTS = require("tts")
 local queryAI = require("ai_query")
-local LookupsLogWriter = require("lookups_log_writer")
+local save_lookup_entry = require("lookups_log")
 local WikipediaImage = require("wikipedia_image")
 
 local QuerySession = {}
@@ -518,7 +518,14 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
 
     QuerySession.stream_answer(chatgpt_viewer, session.message_history, is_dictionary_query, context.display_selection, preface_with_selection, function(answer)
       if is_dictionary_query and answer and answer ~= "" then
-        LookupsLogWriter.enqueue(plugin.path, context.selected_text, context.selection_context)
+        local saved, save_err = save_lookup_entry(
+          plugin.path,
+          context.selected_text,
+          context.selection_context
+        )
+        if not saved and save_err then
+          print(save_err)
+        end
       end
       if is_explain_query then
         session.message_history[#session.message_history + 1] = {
