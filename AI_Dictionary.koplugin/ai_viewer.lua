@@ -30,6 +30,7 @@ local TitleBar = require("ui/widget/titlebar")
 local UIManager = require("ui/uimanager")
 local DeepDive = require("deep_dive")
 local ErrorBoundary = require("error_boundary")
+local PopupLookup = require("popup_lookup")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
@@ -207,6 +208,9 @@ local AIViewer = InputContainer:extend {
   onPronunciation = nil,
   onDeepDive = nil,
   deep_dive_focus = nil,
+  text_selection_callback = nil,
+  text_lookup_enabled = false,
+  lookup_session = nil,
 
   benedict = nil,
   tts_request = nil,
@@ -546,6 +550,10 @@ function AIViewer:init()
 
   if Device:isTouchDevice() then
     local range = self.region
+    local hold_pan_rate = G_reader_settings and G_reader_settings:readSetting("hold_pan_rate")
+    if not hold_pan_rate then
+      hold_pan_rate = Screen.low_pan_rate and 5.0 or 30.0
+    end
     self.ges_events = {
       TapClose = {
         GestureRange:new {
@@ -574,8 +582,9 @@ function AIViewer:init()
       },
       HoldPanText = {
         GestureRange:new {
-          ges = "hold",
+          ges = "hold_pan",
           range = range,
+          rate = hold_pan_rate,
         },
       },
       HoldReleaseText = {
@@ -620,6 +629,9 @@ function AIViewer:init()
     local on_tap_scroll_text = self.scroll_text_w.onTapScrollText
     self.scroll_text_w.onTapScrollText = function(scroll_widget, arg, ges)
       if self:handleDeepDiveTap(text_widget, ges) then
+        return true
+      end
+      if self:handleTextLookupTap(text_widget, ges) then
         return true
       end
       return on_tap_scroll_text(scroll_widget, arg, ges)
@@ -921,8 +933,19 @@ function AIViewer:onForwardingPanRelease(arg, ges)
 end
 
 function AIViewer:handleTextSelection(text, hold_duration, start_idx, end_idx, to_source_index_func)
-  if self.text_selection_callback then
-    self.text_selection_callback(text, hold_duration, start_idx, end_idx, to_source_index_func)
+  if self.text_lookup_enabled and self.text_selection_callback then
+    local cleaned_text = PopupLookup.clean_selection(text)
+    if cleaned_text == "" then return end
+    self.text_lookup_enabled = false
+    local text_widget = self.scroll_text_w and self.scroll_text_w.text_widget
+    local selection_context = text_widget and PopupLookup.context_from_charlist(
+      text_widget.charlist, start_idx, end_idx) or ""
+    local callback = self.text_selection_callback
+    -- Let TextBoxWidget paint its marker-style highlight before replacing the
+    -- popup with the nested lookup's loading state.
+    UIManager:scheduleIn(0.01, ErrorBoundary.wrap("start selected popup lookup", function()
+      callback(cleaned_text, selection_context, hold_duration, start_idx, end_idx, to_source_index_func)
+    end))
     return
   end
   if Device:hasClipboard() then
@@ -932,6 +955,22 @@ function AIViewer:handleTextSelection(text, hold_duration, start_idx, end_idx, t
           or _("Selection copied to clipboard."),
     })
   end
+end
+
+function AIViewer:handleTextLookupTap(text_widget, ges)
+  if not self.text_lookup_enabled or type(self.text_selection_callback) ~= "function"
+      or not text_widget or not ges or not ges.pos then
+    return false
+  end
+
+  -- Reuse TextBoxWidget's native word-boundary and highlight implementation.
+  -- A start/release at the same point selects and visibly marks one word.
+  if not text_widget:onHoldStartText(nil, ges) then
+    return false
+  end
+  return text_widget:onHoldReleaseText(function(text, hold_duration, start_idx, end_idx, to_source_index_func)
+    self:handleTextSelection(text, hold_duration, start_idx, end_idx, to_source_index_func)
+  end, ges) == true
 end
 
 function AIViewer:handleDeepDiveTap(text_widget, ges)
@@ -1009,6 +1048,14 @@ function AIViewer:update(new_text, new_header_text, options)
   if options.deep_dive_focus ~= nil then
     deep_dive_focus = options.deep_dive_focus
   end
+  local text_lookup_enabled = self.text_lookup_enabled
+  if options.text_lookup_enabled ~= nil then
+    text_lookup_enabled = options.text_lookup_enabled
+  end
+  local user_scroll_enabled = self.user_scroll_enabled
+  if options.user_scroll_enabled ~= nil then
+    user_scroll_enabled = options.user_scroll_enabled
+  end
   local updated_viewer = AIViewer:new {
     title = self.title,
     text = new_text,
@@ -1020,9 +1067,12 @@ function AIViewer:update(new_text, new_header_text, options)
     onPronunciation = self.onPronunciation,
     onDeepDive = on_deep_dive,
     deep_dive_focus = deep_dive_focus,
+    text_selection_callback = self.text_selection_callback,
+    text_lookup_enabled = text_lookup_enabled,
+    lookup_session = self.lookup_session,
     benedict = self.benedict,
     tts_request = self.tts_request,
-    user_scroll_enabled = options.user_scroll_enabled ~= nil and options.user_scroll_enabled or self.user_scroll_enabled,
+    user_scroll_enabled = user_scroll_enabled,
     close_callback = self.close_callback,
     stream_cancel = self.stream_cancel,
     auxiliary_cancel = self.auxiliary_cancel,

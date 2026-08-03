@@ -8,7 +8,9 @@ local BackgroundWorker = require("background_worker")
 local Context = require("context")
 local Config = require("configuration_manager")
 local DeepDive = require("deep_dive")
+local DictionaryPrompt = require("dictionary_prompt")
 local ErrorBoundary = require("error_boundary")
+local PopupLookup = require("popup_lookup")
 local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 local TTS = require("tts")
 local queryAI = require("ai_query")
@@ -276,6 +278,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
           update_viewer(partial_answer, nil, {
             user_scroll_enabled = false,
             on_deep_dive = false,
+            text_lookup_enabled = false,
           })
         end
       elseif token_count - last_rendered_token_count >= STREAM_UPDATE_TOKEN_INTERVAL then
@@ -283,6 +286,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
         update_viewer(visible, nil, {
           user_scroll_enabled = false,
           on_deep_dive = false,
+          text_lookup_enabled = false,
         })
       end
     end,
@@ -296,11 +300,15 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
           user_scroll_enabled = true,
           on_deep_dive = session and session.deep_dive_callback or false,
           deep_dive_focus = session and session.deep_dive_focus or false,
+          text_lookup_enabled = is_dictionary and session
+              and session.popup_lookup_callback ~= nil or false,
         })
       else
         current_viewer.user_scroll_enabled = true
         current_viewer.onDeepDive = session and session.deep_dive_callback or false
         current_viewer.deep_dive_focus = session and session.deep_dive_focus or false
+        current_viewer.text_lookup_enabled = is_dictionary and session
+            and session.popup_lookup_callback ~= nil or false
       end
       if on_success then
         on_success(visible)
@@ -313,6 +321,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       update_viewer("Error querying AI: " .. tostring(err), nil, {
         user_scroll_enabled = true,
         on_deep_dive = false,
+        text_lookup_enabled = false,
       })
       if on_complete then
         on_complete()
@@ -385,6 +394,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   if is_dictionary_query then
     tts_request = TTS.create_request_if_available(context.selected_text, context.selection_context, plugin.path)
   end
+  session.tts_request = tts_request
   local initial_header_text = nil
   if is_dictionary_query then
     initial_header_text = select(1, AnswerFormatter.format_dictionary_output(context.display_selection, ""))
@@ -399,6 +409,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       plugin:playDictionaryPronunciation(tts_request)
     end or nil,
     benedict = plugin,
+    lookup_session = session,
     tts_request = tts_request,
     user_scroll_enabled = false,
     bottom_sheet = true,
@@ -416,7 +427,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     if session.query_start_action then UIManager:unschedule(session.query_start_action) end
     if session.image_lookup_cancel then session.image_lookup_cancel() end
     session.image_lookup_cancel = nil
-    TTS.cancel(tts_request)
+    TTS.cancel(session.tts_request)
     WikipediaImage.free(session.image_descriptor)
   end)
 
@@ -444,6 +455,91 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       content = query_text,
     },
   }
+
+  if is_dictionary_query then
+    session.popup_lookup_callback = ErrorBoundary.wrap("start nested AI Dictionary lookup", function(selected_text, popup_context)
+      if session.cancelled then return end
+      selected_text = PopupLookup.clean_selection(selected_text)
+      if selected_text == "" then return end
+
+      if session.image_lookup_cancel then
+        session.image_lookup_cancel()
+        session.image_lookup_cancel = nil
+      end
+      if session.image_download_path then
+        os.remove(session.image_download_path)
+        session.image_download_path = nil
+      end
+
+      local viewer = session.current_viewer
+      if not viewer then return end
+      local old_images = viewer.images
+      viewer.images = nil
+      viewer.stream_cancel = nil
+      TTS.cancel(session.tts_request)
+      session.tts_request = TTS.create_request_if_available(selected_text, popup_context, plugin.path)
+
+      local nested_header = select(1, AnswerFormatter.format_dictionary_output(selected_text, ""))
+      viewer = viewer:update(ONLINE_WAIT_MESSAGE, nested_header, {
+        user_scroll_enabled = false,
+        on_deep_dive = false,
+        text_lookup_enabled = false,
+      })
+      viewer.tts_request = session.tts_request
+      viewer.onPronunciation = session.tts_request and function()
+        plugin:playDictionaryPronunciation(session.tts_request)
+      end or nil
+      session.current_viewer = viewer
+
+      WikipediaImage.free(old_images and old_images[1])
+      session.image_descriptor = nil
+      session.image_lookup_scheduled = false
+      session.metadata_received = false
+
+      local prompt = DictionaryPrompt.for_popup_selection(
+        selected_text, popup_context, context.selection_context)
+      if image_protocol then
+        prompt = prompt .. WikipediaImage.prompt_suffix
+      end
+      prompt = prompt .. output_language_suffix()
+      session.message_history = {
+        {
+          role = "user",
+          content = prompt,
+        },
+      }
+
+      state.last_query = prompt
+      state.last_preface_with_selection = true
+      state.last_display_selection = selected_text
+      state.last_request_parameters = request_parameters
+      state.last_is_report = false
+      state.last_is_dictionary = true
+      state.last_image_protocol = image_protocol
+
+      QuerySession.stream_answer(
+        viewer,
+        session.message_history,
+        true,
+        selected_text,
+        true,
+        function(answer)
+          if not answer or answer == "" then return end
+          local saved, save_err = save_lookup_entry(plugin.path, selected_text, popup_context)
+          if not saved and save_err then print(save_err) end
+        end,
+        request_parameters,
+        function()
+          if session.tts_request then
+            TTS.mark_text_query_finished(session.tts_request)
+          end
+        end,
+        Config.is_debug_mode_enabled() and prompt or nil,
+        session
+      )
+    end)
+    chatgpt_viewer.text_selection_callback = session.popup_lookup_callback
+  end
 
   if is_explain_query then
     session.deep_dive_path = { context.selected_text }
@@ -563,6 +659,7 @@ end
 
 function QuerySession.regenerate(plugin, chatgpt_viewer)
   local tts_request = chatgpt_viewer.tts_request
+  local session = chatgpt_viewer.lookup_session
   if chatgpt_viewer.stream_cancel then
     chatgpt_viewer.stream_cancel()
     chatgpt_viewer.stream_cancel = nil
@@ -573,22 +670,37 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
   end
   local old_images = chatgpt_viewer.images
   chatgpt_viewer.images = nil
-  local updated_viewer = chatgpt_viewer:update(ONLINE_WAIT_MESSAGE, nil, { user_scroll_enabled = false })
+  local updated_viewer = chatgpt_viewer:update(ONLINE_WAIT_MESSAGE, nil, {
+    user_scroll_enabled = false,
+    text_lookup_enabled = false,
+  })
   WikipediaImage.free(old_images and old_images[1])
 
-  local session = {
-    cancelled = false,
-    image_protocol = state.last_image_protocol,
-    current_viewer = updated_viewer,
-    no_image_placeholder_path = plugin.path .. "/Resources/no-image-placeholder.jpg",
-    plugin_path = plugin.path,
-  }
+  if session then
+    session.cancelled = false
+    session.image_protocol = state.last_image_protocol
+    session.current_viewer = updated_viewer
+    session.image_descriptor = nil
+    session.image_lookup_scheduled = false
+    session.metadata_received = false
+  else
+    session = {
+      cancelled = false,
+      image_protocol = state.last_image_protocol,
+      current_viewer = updated_viewer,
+      popup_lookup_callback = updated_viewer.text_selection_callback,
+      no_image_placeholder_path = plugin.path .. "/Resources/no-image-placeholder.jpg",
+      plugin_path = plugin.path,
+    }
+  end
+  updated_viewer.lookup_session = session
+  session.tts_request = tts_request
   updated_viewer.auxiliary_cancel = ErrorBoundary.wrap("cancel regenerated session", function()
     session.cancelled = true
     if session.query_start_action then UIManager:unschedule(session.query_start_action) end
     if session.image_lookup_cancel then session.image_lookup_cancel() end
     session.image_lookup_cancel = nil
-    TTS.cancel(tts_request)
+    TTS.cancel(session.tts_request)
     WikipediaImage.free(session.image_descriptor)
   end)
 
