@@ -300,15 +300,13 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
           user_scroll_enabled = true,
           on_deep_dive = session and session.deep_dive_callback or false,
           deep_dive_focus = session and session.deep_dive_focus or false,
-          text_lookup_enabled = is_dictionary and session
-              and session.popup_lookup_callback ~= nil or false,
+          text_lookup_enabled = session and session.text_lookup_callback ~= nil or false,
         })
       else
         current_viewer.user_scroll_enabled = true
         current_viewer.onDeepDive = session and session.deep_dive_callback or false
         current_viewer.deep_dive_focus = session and session.deep_dive_focus or false
-        current_viewer.text_lookup_enabled = is_dictionary and session
-            and session.popup_lookup_callback ~= nil or false
+        current_viewer.text_lookup_enabled = session and session.text_lookup_callback ~= nil or false
       end
       if on_success then
         on_success(visible)
@@ -456,8 +454,8 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     },
   }
 
-  if is_dictionary_query then
-    session.popup_lookup_started_callback = function()
+  if is_dictionary_query or is_explain_query then
+    session.text_lookup_started_callback = function()
       -- Freeze the completed answer while its marker highlight is displayed.
       -- This prevents a late Wikipedia image refresh from rebuilding the viewer
       -- during the half-second confirmation period.
@@ -466,7 +464,11 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
         session.image_lookup_cancel = nil
       end
     end
-    session.popup_lookup_callback = ErrorBoundary.wrap("start nested AI Dictionary lookup", function(selected_text, popup_context)
+    chatgpt_viewer.text_selection_started_callback = session.text_lookup_started_callback
+  end
+
+  if is_dictionary_query then
+    session.text_lookup_callback = ErrorBoundary.wrap("start nested AI Dictionary lookup", function(selected_text, popup_context)
       if session.cancelled then return end
       selected_text = PopupLookup.clean_selection(selected_text)
       if selected_text == "" then return end
@@ -547,8 +549,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
         session
       )
     end)
-    chatgpt_viewer.text_selection_callback = session.popup_lookup_callback
-    chatgpt_viewer.text_selection_started_callback = session.popup_lookup_started_callback
+    chatgpt_viewer.text_selection_callback = session.text_lookup_callback
   end
 
   if is_explain_query then
@@ -575,6 +576,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
         viewer = viewer:update(ONLINE_WAIT_MESSAGE, nil, {
           user_scroll_enabled = false,
           on_deep_dive = false,
+          text_lookup_enabled = false,
         })
         session.current_viewer = viewer
       end
@@ -616,6 +618,8 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
         session
       )
     end)
+    session.text_lookup_callback = session.deep_dive_callback
+    chatgpt_viewer.text_selection_callback = session.text_lookup_callback
   end
 
   session.query_start_action = ErrorBoundary.wrap("start query stream", function()
@@ -698,7 +702,7 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
       cancelled = false,
       image_protocol = state.last_image_protocol,
       current_viewer = updated_viewer,
-      popup_lookup_callback = updated_viewer.text_selection_callback,
+      text_lookup_callback = updated_viewer.text_selection_callback,
       no_image_placeholder_path = plugin.path .. "/Resources/no-image-placeholder.jpg",
       plugin_path = plugin.path,
     }

@@ -28,7 +28,6 @@ local TextBoxWidget = require("ui/widget/textboxwidget")
 local Size = require("ui/size")
 local TitleBar = require("ui/widget/titlebar")
 local UIManager = require("ui/uimanager")
-local DeepDive = require("deep_dive")
 local ErrorBoundary = require("error_boundary")
 local PopupLookup = require("popup_lookup")
 local VerticalGroup = require("ui/widget/verticalgroup")
@@ -634,9 +633,6 @@ function AIViewer:init()
 
     local on_tap_scroll_text = self.scroll_text_w.onTapScrollText
     self.scroll_text_w.onTapScrollText = function(scroll_widget, arg, ges)
-      if self:handleDeepDiveTap(text_widget, ges) then
-        return true
-      end
       if self:handleTextLookupTap(text_widget, ges) then
         return true
       end
@@ -1004,35 +1000,6 @@ function AIViewer:handleTextLookupTap(text_widget, ges)
   return text_widget:onHoldReleaseText(function(text, hold_duration, start_idx, end_idx, to_source_index_func)
     self:handleTextSelection(text, hold_duration, start_idx, end_idx, to_source_index_func)
   end, ges) == true
-end
-
-function AIViewer:handleDeepDiveTap(text_widget, ges)
-  return ErrorBoundary.call("open AI Explain deep dive", function()
-    if type(self.onDeepDive) ~= "function" or not text_widget
-        or not text_widget._ptf_char_is_bold or not text_widget.charlist
-        or not ges or not ges.pos or not text_widget.dimen then
-      return false
-    end
-
-    local x = ges.pos.x - (text_widget.dimen.x or 0)
-    local y = ges.pos.y - (text_widget.dimen.y or 0)
-    if x < 0 or y < 0 or x >= text_widget.dimen.w or y >= text_widget.dimen.h then
-      return false
-    end
-
-    local term = DeepDive.term_at(
-      text_widget.charlist,
-      text_widget._ptf_char_is_bold,
-      text_widget:getCharPosAtXY(x, y),
-      self.deep_dive_focus
-    )
-    if not term then
-      return false
-    end
-
-    self.onDeepDive(term)
-    return true
-  end) or false
 end
 
 function AIViewer:showTappedImage(text_widget, ges)
