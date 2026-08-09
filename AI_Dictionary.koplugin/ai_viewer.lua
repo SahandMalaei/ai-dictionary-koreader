@@ -87,6 +87,7 @@ local DEFAULT_BOTTOM_SHEET_EDGE_PADDING = Screen:scaleBySize(12)
 local DEFAULT_BOTTOM_SHEET_SELECTION_PADDING = Screen:scaleBySize(5)
 local DEFAULT_ROUNDEDNESS_SIZE = Screen:scaleBySize(0)
 local DEFAULT_BUTTON_ROUNDEDNESS_SIZE = 0
+local TEXT_LOOKUP_HIGHLIGHT_DELAY_SECONDS = 0.65
 
 local function scale_size(value, scale, minimum)
   return math.max(minimum or 0, math.floor(value * scale + 0.5))
@@ -209,8 +210,10 @@ local AIViewer = InputContainer:extend {
   onDeepDive = nil,
   deep_dive_focus = nil,
   text_selection_callback = nil,
+  text_selection_started_callback = nil,
   text_lookup_enabled = false,
   lookup_session = nil,
+  pending_text_lookup = nil,
 
   benedict = nil,
   tts_request = nil,
@@ -339,7 +342,9 @@ function AIViewer:init()
     table.insert(default_buttons, {
       text = _("🔉"),
       callback = function()
-        self.onPronunciation()
+        if not self:isTextLookupPending() then
+          self.onPronunciation()
+        end
       end,
       hold_callback = self.default_hold_callback,
     })
@@ -618,6 +623,7 @@ function AIViewer:init()
     para_direction_rtl = self.para_direction_rtl,
     auto_para_direction = self.auto_para_direction,
     alignment_strict = self.alignment_strict,
+    highlight_text_selection = true,
     scroll_callback = self._buttons_scroll_callback,
   }
   if self.scroll_text_w.text_widget then
@@ -819,6 +825,7 @@ end
 
 function AIViewer:onClose()
   return ErrorBoundary.call("close viewer", function()
+    self:cancelPendingTextLookup()
     if self.stream_cancel then
       self.stream_cancel()
       self.stream_cancel = nil
@@ -836,7 +843,23 @@ function AIViewer:onClose()
 end
 
 function AIViewer:Regenerate()
+  if self:isTextLookupPending() then return true end
   self.benedict:Regenerate(self)
+end
+
+function AIViewer:isTextLookupPending()
+  local pending = self.pending_text_lookup
+  return pending ~= nil and not pending.cancelled and not pending.completed
+end
+
+function AIViewer:cancelPendingTextLookup()
+  local pending = self.pending_text_lookup
+  if not pending then return end
+  pending.cancelled = true
+  if pending.action then
+    UIManager:unschedule(pending.action)
+  end
+  self.pending_text_lookup = nil
 end
 
 function AIViewer:onSwipe(arg, ges)
@@ -933,6 +956,7 @@ function AIViewer:onForwardingPanRelease(arg, ges)
 end
 
 function AIViewer:handleTextSelection(text, hold_duration, start_idx, end_idx, to_source_index_func)
+  if self:isTextLookupPending() then return end
   if self.text_lookup_enabled and self.text_selection_callback then
     local cleaned_text = PopupLookup.clean_selection(text)
     if cleaned_text == "" then return end
@@ -941,11 +965,19 @@ function AIViewer:handleTextSelection(text, hold_duration, start_idx, end_idx, t
     local selection_context = text_widget and PopupLookup.context_from_charlist(
       text_widget.charlist, start_idx, end_idx) or ""
     local callback = self.text_selection_callback
-    -- Let TextBoxWidget paint its marker-style highlight before replacing the
-    -- popup with the nested lookup's loading state.
-    UIManager:scheduleIn(0.01, ErrorBoundary.wrap("start selected popup lookup", function()
+    if self.text_selection_started_callback then
+      ErrorBoundary.call("prepare selected popup lookup", self.text_selection_started_callback)
+    end
+    local pending = { cancelled = false, completed = false }
+    pending.action = ErrorBoundary.wrap("start selected popup lookup", function()
+      if pending.cancelled then return end
+      pending.completed = true
       callback(cleaned_text, selection_context, hold_duration, start_idx, end_idx, to_source_index_func)
-    end))
+    end)
+    self.pending_text_lookup = pending
+    -- Keep TextBoxWidget's marker-style highlight visible long enough for the
+    -- selection to be perceived before replacing the popup with a loading state.
+    UIManager:scheduleIn(TEXT_LOOKUP_HIGHLIGHT_DELAY_SECONDS, pending.action)
     return
   end
   if Device:hasClipboard() then
@@ -958,6 +990,7 @@ function AIViewer:handleTextSelection(text, hold_duration, start_idx, end_idx, t
 end
 
 function AIViewer:handleTextLookupTap(text_widget, ges)
+  if self:isTextLookupPending() then return true end
   if not self.text_lookup_enabled or type(self.text_selection_callback) ~= "function"
       or not text_widget or not ges or not ges.pos then
     return false
@@ -1068,8 +1101,10 @@ function AIViewer:update(new_text, new_header_text, options)
     onDeepDive = on_deep_dive,
     deep_dive_focus = deep_dive_focus,
     text_selection_callback = self.text_selection_callback,
+    text_selection_started_callback = self.text_selection_started_callback,
     text_lookup_enabled = text_lookup_enabled,
     lookup_session = self.lookup_session,
+    pending_text_lookup = self:isTextLookupPending() and self.pending_text_lookup or nil,
     benedict = self.benedict,
     tts_request = self.tts_request,
     user_scroll_enabled = user_scroll_enabled,

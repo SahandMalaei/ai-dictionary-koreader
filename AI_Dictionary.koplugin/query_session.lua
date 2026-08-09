@@ -457,6 +457,15 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   }
 
   if is_dictionary_query then
+    session.popup_lookup_started_callback = function()
+      -- Freeze the completed answer while its marker highlight is displayed.
+      -- This prevents a late Wikipedia image refresh from rebuilding the viewer
+      -- during the half-second confirmation period.
+      if session.image_lookup_cancel then
+        session.image_lookup_cancel()
+        session.image_lookup_cancel = nil
+      end
+    end
     session.popup_lookup_callback = ErrorBoundary.wrap("start nested AI Dictionary lookup", function(selected_text, popup_context)
       if session.cancelled then return end
       selected_text = PopupLookup.clean_selection(selected_text)
@@ -539,6 +548,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       )
     end)
     chatgpt_viewer.text_selection_callback = session.popup_lookup_callback
+    chatgpt_viewer.text_selection_started_callback = session.popup_lookup_started_callback
   end
 
   if is_explain_query then
