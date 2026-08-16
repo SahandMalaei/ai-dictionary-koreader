@@ -35,7 +35,7 @@ local VerticalSpan = require("ui/widget/verticalspan")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local T = require("ffi/util").template
 local util = require("util")
-local _ = require("gettext")
+local _ = require("plugin_i18n")
 local Screen = Device.screen
 
 local SheetContainer = WidgetContainer:extend{}

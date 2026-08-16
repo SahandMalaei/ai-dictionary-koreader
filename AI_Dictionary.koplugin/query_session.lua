@@ -12,22 +12,57 @@ local DictionaryPrompt = require("dictionary_prompt")
 local ErrorBoundary = require("error_boundary")
 local PopupLookup = require("popup_lookup")
 local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
+local RequestWatchdog = require("request_watchdog")
 local TTS = require("tts")
 local queryAI = require("ai_query")
 local save_lookup_entry = require("lookups_log")
 local WikipediaImage = require("wikipedia_image")
+local OutputLanguage = require("output_language")
+local _ = require("plugin_i18n")
+local T = _.template
 
 local QuerySession = {}
 
 local STREAM_UPDATE_TOKEN_INTERVAL = 10
 local ONLINE_WAIT_MESSAGE = "Getting the answer..."
 
-local function output_language_suffix()
-  if Config.is_english_output() then return "" end
-  local language = Config.get_output_language()
-  return "\n\nWrite the user-visible answer in " .. language .. ". " ..
-      "Keep machine-readable metadata, the exact English Wikipedia article title, formatting markers, " ..
-      "and required dictionary section labels exactly as specified. Translate only the user-visible content."
+local function is_placeholder_answer(answer)
+  return not answer or answer == "" or answer == _(ONLINE_WAIT_MESSAGE)
+end
+
+local function start_watched_query(message_history, opts)
+  local watchdog = RequestWatchdog.start({
+    on_timeout_cancel = opts.on_timeout_cancel,
+  })
+  local cancel_http = queryAI(message_history, {
+    request_parameters = opts.request_parameters,
+    on_delta = function(delta, accumulated, token_count)
+      watchdog.note_progress()
+      if opts.on_delta then
+        opts.on_delta(delta, accumulated, token_count)
+      end
+    end,
+    on_done = function(accumulated)
+      if not watchdog.notify_finished() then
+        return
+      end
+      if opts.on_done then
+        opts.on_done(accumulated)
+      end
+    end,
+    on_error = function(err)
+      if not watchdog.notify_finished() then
+        return
+      end
+      if opts.on_error then
+        opts.on_error(err)
+      end
+    end,
+  })
+  watchdog.set_cancel_http(cancel_http)
+  return function()
+    watchdog.cancel()
+  end
 end
 
 local state = {
@@ -265,13 +300,14 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
     repaint_now()
   end
 
-  cancel_stream = queryAI(message_history, {
+  cancel_stream = start_watched_query(message_history, {
     request_parameters = request_parameters,
     on_delta = function(_, accumulated, token_count)
       local visible, metadata_complete = visible_response(accumulated)
       if not metadata_complete then return end
       if is_dictionary then
-        local boundary = AnswerFormatter.find_dictionary_section_boundary(visible, last_rendered_dictionary_boundary)
+        local boundary = AnswerFormatter.find_dictionary_section_boundary(
+          visible, last_rendered_dictionary_boundary, current_viewer and current_viewer.benedict)
         if boundary then
           last_rendered_dictionary_boundary = boundary
           local partial_answer = visible:sub(1, boundary - 1):gsub("%s+$", "")
@@ -316,11 +352,29 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
       end
     end,
     on_error = function(err)
-      update_viewer("Error querying AI: " .. tostring(err), nil, {
+      update_viewer(T(_("Error querying AI: %1"), tostring(err)), nil, {
         user_scroll_enabled = true,
         on_deep_dive = false,
         text_lookup_enabled = false,
       })
+      if on_complete then
+        on_complete()
+      end
+    end,
+    on_timeout_cancel = function(seconds)
+      if is_placeholder_answer(last_rendered_answer) then
+        update_viewer(T(_("Request cancelled after the maximum timeout (%1 seconds)."), seconds), nil, {
+          user_scroll_enabled = true,
+          on_deep_dive = false,
+          text_lookup_enabled = false,
+        })
+      else
+        update_viewer(last_rendered_answer, nil, {
+          user_scroll_enabled = true,
+          on_deep_dive = false,
+          text_lookup_enabled = false,
+        })
+      end
       if on_complete then
         on_complete()
       end
@@ -348,7 +402,7 @@ function QuerySession.stream_plain_answer(chatgpt_viewer, message_history, on_co
     repaint_now()
   end
 
-  cancel_stream = queryAI(message_history, {
+  cancel_stream = start_watched_query(message_history, {
     on_delta = function(_, accumulated, token_count)
       if token_count - last_rendered_token_count >= STREAM_UPDATE_TOKEN_INTERVAL then
         last_rendered_token_count = token_count
@@ -366,7 +420,20 @@ function QuerySession.stream_plain_answer(chatgpt_viewer, message_history, on_co
       end
     end,
     on_error = function(err)
-      update_viewer("Error querying AI: " .. tostring(err), { user_scroll_enabled = true })
+      update_viewer(T(_("Error querying AI: %1"), tostring(err)), { user_scroll_enabled = true })
+      if on_complete then
+        on_complete()
+      end
+    end,
+    on_timeout_cancel = function(seconds)
+      if is_placeholder_answer(last_rendered_answer) then
+        update_viewer(
+          T(_("Request cancelled after the maximum timeout (%1 seconds)."), seconds),
+          { user_scroll_enabled = true }
+        )
+      else
+        update_viewer(last_rendered_answer, { user_scroll_enabled = true })
+      end
       if on_complete then
         on_complete()
       end
@@ -395,12 +462,12 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   session.tts_request = tts_request
   local initial_header_text = nil
   if is_dictionary_query then
-    initial_header_text = select(1, AnswerFormatter.format_dictionary_output(context.display_selection, ""))
+    initial_header_text = select(1, AnswerFormatter.format_dictionary_output(context.display_selection, "", plugin))
   end
 
   local chatgpt_viewer = AIViewer:new {
-    title = dialog_title,
-    text = ONLINE_WAIT_MESSAGE,
+    title = _(dialog_title),
+    text = _(ONLINE_WAIT_MESSAGE),
     header_text = initial_header_text,
     onAskQuestion = nil,
     onPronunciation = tts_request and function()
@@ -437,7 +504,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     query_text = query_text .. WikipediaImage.prompt_suffix
   end
   if is_dictionary_query or is_explain_query then
-    query_text = query_text .. output_language_suffix()
+    query_text = query_text .. OutputLanguage.prompt_suffix(plugin)
   end
   state.last_query = query_text
   state.last_preface_with_selection = preface_with_selection
@@ -490,8 +557,8 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       TTS.cancel(session.tts_request)
       session.tts_request = TTS.create_request_if_available(selected_text, popup_context, plugin.path)
 
-      local nested_header = select(1, AnswerFormatter.format_dictionary_output(selected_text, ""))
-      viewer = viewer:update(ONLINE_WAIT_MESSAGE, nested_header, {
+      local nested_header = select(1, AnswerFormatter.format_dictionary_output(selected_text, "", plugin))
+      viewer = viewer:update(_(ONLINE_WAIT_MESSAGE), nested_header, {
         user_scroll_enabled = false,
         on_deep_dive = false,
         text_lookup_enabled = false,
@@ -508,11 +575,11 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       session.metadata_received = false
 
       local prompt = DictionaryPrompt.for_popup_selection(
-        selected_text, popup_context, context.selection_context)
+        plugin, selected_text, popup_context, context.selection_context)
       if image_protocol then
         prompt = prompt .. WikipediaImage.prompt_suffix
       end
-      prompt = prompt .. output_language_suffix()
+      prompt = prompt .. OutputLanguage.prompt_suffix(plugin)
       session.message_history = {
         {
           role = "user",
@@ -573,7 +640,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       if viewer then
         viewer.images = nil
         viewer.stream_cancel = nil
-        viewer = viewer:update(ONLINE_WAIT_MESSAGE, nil, {
+        viewer = viewer:update(_(ONLINE_WAIT_MESSAGE), nil, {
           user_scroll_enabled = false,
           on_deep_dive = false,
           text_lookup_enabled = false,
@@ -592,7 +659,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       if image_protocol then
         prompt = prompt .. WikipediaImage.prompt_suffix_for_deep_dive(term)
       end
-      prompt = prompt .. output_language_suffix()
+      prompt = prompt .. OutputLanguage.prompt_suffix(plugin)
       session.message_history[#session.message_history + 1] = {
         role = "user",
         content = prompt,
@@ -652,7 +719,8 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   UIManager:scheduleIn(0.01, session.query_start_action)
 end
 
-function QuerySession.start_report(report_viewer, report_prompt)
+function QuerySession.start_report(plugin, report_viewer, report_prompt)
+  report_prompt = tostring(report_prompt or "") .. OutputLanguage.prompt_suffix(plugin)
   state.last_query = report_prompt
   state.last_preface_with_selection = false
   state.last_display_selection = ""
@@ -684,7 +752,7 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
   end
   local old_images = chatgpt_viewer.images
   chatgpt_viewer.images = nil
-  local updated_viewer = chatgpt_viewer:update(ONLINE_WAIT_MESSAGE, nil, {
+  local updated_viewer = chatgpt_viewer:update(_(ONLINE_WAIT_MESSAGE), nil, {
     user_scroll_enabled = false,
     text_lookup_enabled = false,
   })

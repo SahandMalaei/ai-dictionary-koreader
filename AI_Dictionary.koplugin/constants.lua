@@ -1,6 +1,6 @@
 local Constants = {
   network = {
-    request_timeout_seconds = 15,
+    request_timeout_seconds = 90,
   },
 }
 

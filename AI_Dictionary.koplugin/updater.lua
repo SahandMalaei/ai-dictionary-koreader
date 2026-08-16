@@ -11,6 +11,8 @@ local ltn12 = require("ltn12")
 local util = require("util")
 
 local ErrorBoundary = require("error_boundary")
+local _ = require("plugin_i18n")
+local T = _.template
 
 local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 local UPDATE_PROMPT_COOLDOWN_SECONDS = 7 * 24 * 60 * 60
@@ -362,7 +364,7 @@ function Updater:performCheck(manual)
   local release, err = get_latest_release()
   if not release then
     if manual then
-      show_message("Could not check for AI Dictionary updates:\n" .. tostring(err), 8)
+      show_message(T(_("Could not check for AI Dictionary updates:\n%1"), tostring(err)), 8)
     end
     return
   end
@@ -371,7 +373,7 @@ function Updater:performCheck(manual)
   local latest_version = tostring(release.tag_name):gsub("^v", "")
   if compare_versions(current_version, latest_version) >= 0 then
     if manual then
-      show_message("AI Dictionary is up to date.")
+      show_message(_("AI Dictionary is up to date."))
     end
     return
   end
@@ -382,13 +384,13 @@ end
 function Updater:scheduleCheck(delay, manual)
   if self.check_in_progress then
     if manual then
-      show_message("An AI Dictionary update check is already in progress.")
+      show_message(_("An AI Dictionary update check is already in progress."))
     end
     return
   end
   if not NetworkMgr:isOnline() then
     if manual then
-      show_message("Could not check for updates while offline.")
+      show_message(_("Could not check for updates while offline."))
     end
     return
   end
@@ -403,7 +405,7 @@ function Updater:scheduleCheck(delay, manual)
     )
     self.check_in_progress = false
     if err and manual then
-      show_message("Could not check for AI Dictionary updates:\n" .. tostring(err), 8)
+      show_message(T(_("Could not check for AI Dictionary updates:\n%1"), tostring(err)), 8)
     end
   end)
 end
@@ -424,12 +426,12 @@ function Updater:promptForUpdate(current_version, latest_version, tag_name)
     ErrorBoundary.call("save update prompt interaction", self.markUpdatePromptInteracted, self)
   end
   UIManager:show(ConfirmBox:new {
-    text = "AI Dictionary " .. latest_version .. " is available.\n\nInstalled version: "
-        .. tostring(current_version) .. "\n\nUpdate now?",
-    ok_text = "Update",
+    text = T(_("AI Dictionary %1 is available.\n\nInstalled version: %2\n\nUpdate now?"),
+        latest_version, tostring(current_version)),
+    ok_text = _("Update"),
     ok_callback = ErrorBoundary.wrap("start plugin update", function()
       mark_interacted()
-      local updating_message = show_message("Updating AI Dictionary...", 2)
+      local updating_message = show_message(_("Updating AI Dictionary..."), 2)
       UIManager:scheduleIn(0.1, ErrorBoundary.wrap("plugin update", function()
         local ok, err = ErrorBoundary.call(
           "apply plugin update",
@@ -441,7 +443,7 @@ function Updater:promptForUpdate(current_version, latest_version, tag_name)
         if ok then
           self:showRestartDialog()
         else
-          show_message("AI Dictionary update failed:\n" .. tostring(err), 8)
+          show_message(T(_("AI Dictionary update failed:\n%1"), tostring(err)), 8)
         end
       end))
     end),
@@ -490,12 +492,12 @@ end
 
 function Updater:showRestartDialog()
   UIManager:show(ButtonDialog:new {
-    title = "AI Dictionary was updated.\n\nPlease quit and restart KOReader to load the new version.",
+    title = _("AI Dictionary was updated.\n\nPlease quit and restart KOReader to load the new version."),
     dismissable = false,
     buttons = {
       {
         {
-          text = "Quit",
+          text = _("Quit"),
           callback = function()
             UIManager:quit()
           end,

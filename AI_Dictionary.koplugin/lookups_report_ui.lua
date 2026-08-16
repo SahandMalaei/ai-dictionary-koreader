@@ -1,6 +1,8 @@
 local ButtonDialog = require("ui/widget/buttondialog")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
+local _ = require("plugin_i18n")
+local T = _.template
 
 local AIViewer = require("ai_viewer")
 local ErrorBoundary = require("error_boundary")
@@ -22,11 +24,11 @@ function LookupsReportUI.show_request_dialog(plugin, selected_index)
   local report_dialog
 
   report_dialog = ButtonDialog:new {
-    title = "AI Dictionary Lookups Report",
+    title = _("AI Dictionary Lookups Report"),
     buttons = {
       {
         {
-          text = "Timeframe: " .. timeframe.label,
+          text = T(_("Timeframe: %1"), _(timeframe.label)),
           callback = function()
             UIManager:close(report_dialog)
             plugin:showLookupsReportTimeframeDialog(selected_index)
@@ -35,7 +37,7 @@ function LookupsReportUI.show_request_dialog(plugin, selected_index)
       },
       {
         {
-          text = "Generate Report",
+          text = _("Generate Report"),
           callback = function()
             UIManager:close(report_dialog)
             plugin:generateLookupsReport(timeframe)
@@ -55,7 +57,7 @@ function LookupsReportUI.show_timeframe_dialog(plugin, selected_index)
   for index, timeframe in ipairs(LookupsReport.TIMEFRAMES) do
     table.insert(buttons, {
       {
-        text = (index == selected_index and "* " or "") .. timeframe.label,
+        text = (index == selected_index and "* " or "") .. _(timeframe.label),
         callback = function()
           UIManager:close(selector_dialog)
           plugin:showLookupsReportRequestDialog(index)
@@ -65,7 +67,7 @@ function LookupsReportUI.show_timeframe_dialog(plugin, selected_index)
   end
 
   selector_dialog = ButtonDialog:new {
-    title = "Timeframe",
+    title = _("Timeframe"),
     buttons = buttons,
   }
 
@@ -75,13 +77,13 @@ end
 function LookupsReportUI.generate(plugin, timeframe)
   local entries = LookupsReport.load_entries(plugin.path, timeframe)
   if #entries == 0 then
-    show_message("No lookups found for " .. timeframe.label .. ".")
+    show_message(T(_("No lookups found for %1."), _(timeframe.label)))
     return
   end
 
   local report_viewer = AIViewer:new {
-    title = "AI Dictionary Lookups Report",
-    text = "Generating report...",
+    title = _("AI Dictionary Lookups Report"),
+    text = _("Generating report..."),
     onAskQuestion = nil,
     benedict = plugin,
   }
@@ -89,7 +91,7 @@ function LookupsReportUI.generate(plugin, timeframe)
   UIManager:show(report_viewer)
 
   UIManager:scheduleIn(0.01, ErrorBoundary.wrap("start lookups report", function()
-    QuerySession.start_report(report_viewer, LookupsReport.build_prompt(entries, timeframe))
+    QuerySession.start_report(plugin, report_viewer, LookupsReport.build_prompt(entries, timeframe))
   end))
 end
 

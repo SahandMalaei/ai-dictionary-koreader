@@ -25,11 +25,21 @@ local json = require("json")
 local Device = require("device")
 local AndroidHttpWorker = require("android_http_worker")
 local BackgroundWorker = require("background_worker")
+local _ = require("plugin_i18n")
+local RequestTimeout = require("request_timeout")
 
-local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
-
-https.TIMEOUT = REQUEST_TIMEOUT_SECONDS
-http.TIMEOUT = REQUEST_TIMEOUT_SECONDS
+local logger
+do
+  local ok, required_logger = pcall(require, "logger")
+  if ok then
+    logger = required_logger
+  else
+    logger = {
+      warn = function() end,
+      err = function() end,
+    }
+  end
+end
 
 local function hasValue(value)
   return type(value) == "string" and value:match("%S") ~= nil
@@ -125,6 +135,14 @@ local function countTokens(text)
   return count
 end
 
+local function consumeSseEvent(event, on_payload)
+  for line in event:gmatch("[^\r\n]+") do
+    if line:sub(1, 5) == "data:" then
+      on_payload(line:sub(6):match("^%s*(.-)%s*$"))
+    end
+  end
+end
+
 local function parseSseBuffer(buffer, on_payload)
   while true do
     local sep_start, sep_end = buffer:find("\n\n", 1, true)
@@ -139,17 +157,33 @@ local function parseSseBuffer(buffer, on_payload)
       break
     end
 
-    local event = buffer:sub(1, sep_start - 1)
+    consumeSseEvent(buffer:sub(1, sep_start - 1), on_payload)
     buffer = buffer:sub(sep_end + 1)
-
-    for line in event:gmatch("[^\r\n]+") do
-      if line:sub(1, 5) == "data:" then
-        on_payload(line:sub(6):match("^%s*(.-)%s*$"))
-      end
-    end
   end
 
   return buffer
+end
+
+local function isFinishReason(value)
+  return type(value) == "string" and value ~= "" and value ~= "null"
+end
+
+local function choiceContent(choice)
+  if type(choice) ~= "table" then
+    return nil
+  end
+  local message = choice.message
+  if type(message) == "table" and hasValue(message.content) then
+    return message.content
+  end
+  local delta = choice.delta
+  if type(delta) == "table" and hasValue(delta.content) then
+    return delta.content
+  end
+  if hasValue(choice.text) then
+    return choice.text
+  end
+  return nil
 end
 
 local function copyParameters(target, source)
@@ -208,7 +242,7 @@ local function queryAI(message_history, opts)
   local api_url, requestBody = buildRequestBody(message_history, configuration, opts.request_parameters)
 
   if not hasValue(api_key_value) and not isHttpUrl(api_url) then
-    if opts.on_error then opts.on_error("No API key configured.") end
+    if opts.on_error then opts.on_error(_("No API key configured.")) end
     return function() end
   end
 
@@ -219,6 +253,9 @@ local function queryAI(message_history, opts)
   local response_code = nil
   local android_response_length = 0
   local stream_completed = false
+  local network_timeout = RequestTimeout.hard_seconds()
+  https.TIMEOUT = network_timeout
+  http.TIMEOUT = network_timeout
 
   local function handlePayload(payload)
     if payload == "[DONE]" then
@@ -231,18 +268,26 @@ local function queryAI(message_history, opts)
         and obj
         and obj.choices
         and obj.choices[1]
+
+    if choice and isFinishReason(choice.finish_reason) then
+      stream_completed = true
+    end
+
     local delta = choice
         and choice.delta
         and choice.delta.content
 
-    if choice and choice.finish_reason ~= nil then
-      stream_completed = true
-    end
-
-    if delta and delta ~= "" then
+    if hasValue(delta) then
       accumulated = accumulated .. delta
       token_count = token_count + countTokens(delta)
       if opts.on_delta then opts.on_delta(delta, accumulated, token_count) end
+    elseif not hasValue(accumulated) then
+      local content = choiceContent(choice)
+      if content then
+        accumulated = content
+        token_count = token_count + countTokens(content)
+        if opts.on_delta then opts.on_delta(content, accumulated, token_count) end
+      end
     end
   end
 
@@ -258,16 +303,64 @@ local function queryAI(message_history, opts)
   end
 
   local function finish_request()
-    if response_code ~= "200" and response_code ~= "wantread" and response_code ~= "timeout" then
+    if response_buffer ~= "" then
+      consumeSseEvent(response_buffer, handlePayload)
+      response_buffer = ""
+    end
+
+    if not hasValue(accumulated) then
+      local body = table.concat(response_body)
+      local ok_json, obj = pcall(function() return json.decode(body) end)
+      if ok_json and type(obj) == "table" then
+        local content = choiceContent(obj.choices and obj.choices[1])
+        if content then
+          accumulated = content
+          stream_completed = true
+        end
+      end
+    end
+
+    local http_ok = response_code == "200"
+        or response_code == "wantread"
+        or response_code == "timeout"
+    local usable = hasValue(accumulated)
+
+    if not http_ok then
       if opts.on_error then
         opts.on_error(tostring(response_code) .. "\n\nResponse: " .. table.concat(response_body))
       end
-    elseif not stream_completed then
-      if opts.on_error then
-        opts.on_error("Incomplete AI response: the connection ended before the stream completed.")
+      return
+    end
+
+    if usable then
+      if not stream_completed then
+        logger.warn("AI Dictionary: stream ended without a finish marker; using received content")
       end
-    elseif opts.on_done then
-      opts.on_done(accumulated)
+      if opts.on_done then
+        opts.on_done(accumulated)
+      end
+      return
+    end
+
+    if opts.on_error then
+      opts.on_error(_("Incomplete AI response: the connection ended before the stream completed."))
+    end
+  end
+
+  local function recover_or_error(err)
+    if response_buffer ~= "" then
+      consumeSseEvent(response_buffer, handlePayload)
+      response_buffer = ""
+    end
+    if hasValue(accumulated) then
+      logger.warn("AI Dictionary: recovering streamed content after: " .. tostring(err))
+      if opts.on_done then
+        opts.on_done(accumulated)
+      end
+      return
+    end
+    if opts.on_error then
+      opts.on_error(err)
     end
   end
 
@@ -279,7 +372,7 @@ local function queryAI(message_history, opts)
       content_type = "application/json",
       accept = "text/event-stream",
       body = requestBody,
-      timeout_seconds = REQUEST_TIMEOUT_SECONDS,
+      timeout_seconds = network_timeout,
     }, {
       on_progress = function(full_response)
         if #full_response <= android_response_length then return end
@@ -295,8 +388,12 @@ local function queryAI(message_history, opts)
         response_code = tostring(code)
         finish_request()
       end,
-      on_error = function(err)
-        if opts.on_error then opts.on_error(err) end
+      on_error = function(err, full_response)
+        if type(full_response) == "string" and #full_response > android_response_length then
+          handle_message("C" .. full_response:sub(android_response_length + 1))
+          android_response_length = #full_response
+        end
+        recover_or_error(err)
       end,
     })
   end
@@ -317,9 +414,7 @@ local function queryAI(message_history, opts)
   end, {
     on_message = handle_message,
     on_complete = finish_request,
-    on_error = function(err)
-      if opts.on_error then opts.on_error(err) end
-    end,
+    on_error = recover_or_error,
   })
 end
 

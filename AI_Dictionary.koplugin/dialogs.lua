@@ -2,7 +2,7 @@ local InputDialog = require("ui/widget/inputdialog")
 local AIViewer = require("ai_viewer")
 local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
-local _ = require("gettext")
+local _ = require("plugin_i18n")
 
 local CONFIGURATION = nil
 local buttons, input_dialog

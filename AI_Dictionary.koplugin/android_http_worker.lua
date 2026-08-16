@@ -335,7 +335,7 @@ function AndroidHttpWorker.start(options, callbacks)
       invoke("Android HTTP completion callback", callbacks.on_complete, code, text)
     elseif status == STATUS_FAILED then
       local err = call_string(android, methods.get_error, request_id)
-      invoke("Android HTTP error callback", callbacks.on_error, err)
+      invoke("Android HTTP error callback", callbacks.on_error, err, text)
     elseif status ~= STATUS_CANCELLED then
       invoke("Android HTTP error callback", callbacks.on_error,
         "Android HTTP worker returned an invalid status.")

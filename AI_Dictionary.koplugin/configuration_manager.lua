@@ -1,3 +1,5 @@
+local _ = require("plugin_i18n")
+
 local ConfigurationManager = {}
 
 ConfigurationManager.CORE_CONFIGURATION_KEYS = {
@@ -7,7 +9,6 @@ ConfigurationManager.CORE_CONFIGURATION_KEYS = {
   "voice_endpoint",
   "voice_model",
   "voice_voice",
-  "output_language",
   "images",
   "update_check",
   "debug_mode",
@@ -17,13 +18,13 @@ ConfigurationManager.CORE_CONFIGURATION_KEY_SET = {
   api_key = true,
   text_endpoint = true,
   text_model = true,
-  output_language = true,
   voice_endpoint = true,
   voice_model = true,
   voice_voice = true,
   images = true,
   debug_mode = true,
   update_check = true,
+  text_endpoint_type = true,
 }
 
 ConfigurationManager.BOOLEAN_CONFIGURATION_KEYS = {
@@ -37,13 +38,14 @@ ConfigurationManager.DEPRECATED_CONFIGURATION_KEYS = {
   model = true,
   voice_api_key = true,
   voice_provider = true,
+  output_language = true,
+  request_timeout_seconds = true,
 }
 
 ConfigurationManager.CONFIGURATION_LABELS = {
   api_key = "API key",
   text_endpoint = "Text endpoint URL",
   text_model = "Text model",
-  output_language = "Output language",
   additional_parameters = "Additional parameters",
   voice_endpoint = "Voice endpoint URL",
   voice_model = "Voice model",
@@ -75,14 +77,6 @@ function ConfigurationManager.normalize(configuration)
   if configuration.images == nil then
     configuration.images = true
   end
-  if type(configuration.output_language) ~= "string"
-      or configuration.output_language:match("^%s*$")
-      or configuration.output_language:find("[%c\r\n]")
-      or #configuration.output_language > 60 then
-    configuration.output_language = "English"
-  else
-    configuration.output_language = configuration.output_language:match("^%s*(.-)%s*$")
-  end
   return configuration
 end
 
@@ -95,8 +89,7 @@ function ConfigurationManager.load()
   return ConfigurationManager.normalize({
     api_key = "",
     text_endpoint = "https://api.openai.com/v1/chat/completions",
-    text_model = "gpt-5-nano",
-    output_language = "English",
+    text_model = "gpt-5.4-nano",
     images = true,
     update_check = true,
   })
@@ -115,15 +108,6 @@ end
 function ConfigurationManager.is_images_enabled()
   local configuration = ConfigurationManager.load()
   return not configuration or configuration.images ~= false
-end
-
-function ConfigurationManager.get_output_language()
-  return ConfigurationManager.load().output_language or "English"
-end
-
-function ConfigurationManager.is_english_output()
-  local language = ConfigurationManager.get_output_language():lower()
-  return language == "english" or language == "en" or language == "en-us" or language == "en-gb"
 end
 
 local function is_array(value)
@@ -242,16 +226,24 @@ function ConfigurationManager.parse_lua_literal(input)
   return value
 end
 
+function ConfigurationManager.get_label(key)
+  local label = ConfigurationManager.CONFIGURATION_LABELS[key]
+  if label then
+    return _(label)
+  end
+  return tostring(key)
+end
+
 function ConfigurationManager.display_value(key, value)
   if value == nil then
-    return "Not set"
+    return _("Not set")
   end
   if type(value) == "string" and value:match("%S") == nil then
-    return "Not set"
+    return _("Not set")
   end
   if key == "api_key" and type(value) == "string" and value ~= "" then
     if #value <= 10 then
-      return "set"
+      return _("set")
     end
     return value:sub(1, 6) .. "..." .. value:sub(-4)
   end
