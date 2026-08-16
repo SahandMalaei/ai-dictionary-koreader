@@ -9,6 +9,10 @@ local QuerySession = require("query_session")
 local SettingsMenu = require("settings_menu")
 local TTS = require("tts")
 local Updater = require("updater")
+local OutputLanguage = require("output_language")
+local RequestTimeout = require("request_timeout")
+local _ = require("plugin_i18n")
+local T = _.template
 
 local Benedict = InputContainer:new {
   name = "benedict",
@@ -57,7 +61,15 @@ function Benedict:generateLookupsReport(timeframe)
 end
 
 function Benedict:getSettingsMenuItems()
-  return ErrorBoundary.call("build settings menu", SettingsMenu.get_items, self)
+  local items, err = ErrorBoundary.call("build settings menu", SettingsMenu.get_items, self)
+  if type(items) == "table" then
+    return items
+  end
+  return {
+    {
+      text = T(_("Could not open settings:\n%1"), tostring(err or "")),
+    },
+  }
 end
 
 function Benedict:saveConfiguration(configuration)
@@ -80,6 +92,26 @@ function Benedict:deleteConfigurationValue(key)
   return ErrorBoundary.call("delete configuration value", SettingsMenu.delete_configuration_value, self, key)
 end
 
+function Benedict:selectTextProvider(provider_id)
+  return ErrorBoundary.call("select text provider", SettingsMenu.select_text_provider, self, provider_id)
+end
+
+function Benedict:selectTextModel(model_id)
+  return ErrorBoundary.call("select text model", SettingsMenu.select_text_model, self, model_id)
+end
+
+function Benedict:selectVoiceModel(model_id)
+  return ErrorBoundary.call("select voice model", SettingsMenu.select_voice_model, self, model_id)
+end
+
+function Benedict:selectOutputLanguage(mode)
+  return ErrorBoundary.call("select output language", SettingsMenu.select_output_language, self, mode)
+end
+
+function Benedict:editRequestTimeout()
+  return ErrorBoundary.call("edit request timeout", SettingsMenu.edit_request_timeout, self)
+end
+
 function Benedict:checkForUpdates()
   if not self.updater then
     self.updater = Updater:new(self)
@@ -90,14 +122,14 @@ end
 function Benedict:addToMainMenu(menu_items)
   return ErrorBoundary.call("build main menu", function()
     menu_items.ai_dictionary_lookups_report = {
-      text = "AI Dictionary Lookups Report",
+      text = _("AI Dictionary Lookups Report"),
       sorting_hint = "search",
       callback = ErrorBoundary.wrap("open lookups report", function()
         self:showLookupsReportRequestDialog()
       end),
     }
     menu_items.ai_dictionary_settings = {
-      text = "AI Dictionary settings",
+      text = _("AI Dictionary settings"),
       sorting_hint = "more_tools",
       sub_item_table_func = function()
         return self:getSettingsMenuItems()
@@ -108,6 +140,8 @@ end
 
 function Benedict:init()
   ErrorBoundary.call("startup TTS cleanup", TTS.cleanup, self.path)
+  ErrorBoundary.call("migrate output language", OutputLanguage.migrate, self)
+  ErrorBoundary.call("migrate request timeout", RequestTimeout.migrate, self)
 
   if self.ui and self.ui.menu then
     ErrorBoundary.call("main menu registration", function()

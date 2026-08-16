@@ -1,8 +1,9 @@
 local Device = require("device")
-local _ = require("gettext")
+local _ = require("plugin_i18n")
 
 local ErrorBoundary = require("error_boundary")
 local DictionaryPrompt = require("dictionary_prompt")
+local OutputLanguage = require("output_language")
 
 local Actions = {}
 
@@ -42,7 +43,7 @@ function Actions.register(plugin)
       enabled = Device:hasClipboard(),
       callback = function()
         plugin:Query(reader_highlight_instance, "AI Simplify", false,
-          "I'm an advanced language learner. I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
+          "I'm an advanced learner of " .. OutputLanguage.resolve_prompt_name(plugin) .. ". I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
           "This is the context where it appears: '...{context}...'\n" ..
           "Rewrite and simplify it to make it more understandable. Brevity is also important. Give just one output and not several options. Ask no questions at the end.")
       end,
@@ -55,7 +56,7 @@ function Actions.register(plugin)
       enabled = Device:hasClipboard(),
       callback = function()
         plugin:Query(reader_highlight_instance, "AI Dictionary", true,
-          DictionaryPrompt.for_book_selection())
+          DictionaryPrompt.for_book_selection(plugin))
       end,
     }
   end))
