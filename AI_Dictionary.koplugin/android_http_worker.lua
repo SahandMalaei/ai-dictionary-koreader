@@ -319,13 +319,15 @@ function AndroidHttpWorker.start(options, callbacks)
   local poll
   poll = function()
     if not active then return end
+    -- Read status first so COMPLETE always uses text read after completion.
+    local status = call_int(android, methods.get_status, request_id)
     local text = call_string(android, methods.get_text, request_id)
     if text ~= last_text then
       last_text = text
       invoke("Android HTTP progress callback", callbacks.on_progress, text)
     end
+    if not active then return end
 
-    local status = call_int(android, methods.get_status, request_id)
     if status == STATUS_RUNNING then
       UIManager:scheduleIn(POLL_INTERVAL_SECONDS, poll)
       return

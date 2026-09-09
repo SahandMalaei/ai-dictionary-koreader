@@ -235,11 +235,12 @@ local function queryAI(message_history, opts)
         and choice.delta
         and choice.delta.content
 
-    if choice and choice.finish_reason ~= nil then
+    -- JSON null may decode to a non-nil sentinel while the stream is running.
+    if choice and hasValue(choice.finish_reason) and choice.finish_reason ~= "null" then
       stream_completed = true
     end
 
-    if delta and delta ~= "" then
+    if type(delta) == "string" and delta ~= "" then
       accumulated = accumulated .. delta
       token_count = token_count + countTokens(delta)
       if opts.on_delta then opts.on_delta(delta, accumulated, token_count) end
