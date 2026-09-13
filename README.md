@@ -1,34 +1,76 @@
-# AI Dictionary: Supercharged Dictionary/Explainer for KOReader
+# AI Dictionary for KOReader
 
-AI Dictionary is a dictionary/explanation plugin for KOReader that can have a transformative effect on your reading and learning. I built it out of personal frustration with the dictionary solutions that are currently available, and the resulting plugin is something I use every day with my reading. The limitations of traditional dictionaries, which this project adresses, include:
-1. They give you multiple definitions of the same word and you need to figure out/guess which definition fits the context.
-2. The built-in dictionaries of ebook readers generally don't support looking up the definition of multi-part phrases and idioms.
-3. They can't give you the definition in the context of the book that you are reading, and might—understandably—lack the definiton for words which only make sense in the context of a book, e.g. fictional terms in a novel.
+I built AI Dictionary out of personal frustration with the dictionaries available on e-readers. Looking up a word often meant sorting through several definitions and guessing which one fit the sentence. Phrases, idioms, and fictional terms could leave me with nothing useful at all. I wanted something that understood what I was reading, and the resulting plugin is something I now use every day.
 
-AI Dictionary gives you the meaning of your selected text **in the context** of its surrounding words, and also **in the context of the book you are reading**. You can ask for the definition of any number of words together, ask it to explain text in the context of the book, or to turn the selected text into more simplified English. All of that is available at the press of a button with no need to type anything. All the back-and-forth with the AI is done in the background, for a most seamless reading/learning experience.
+AI Dictionary lets you look up words and idioms, understand references, and simplify passages **in the context of your book**. It uses your selection, nearby text, and the book's title, author, and chapter (when available). Just select some text and choose an action.
 
-![Demo](demo.gif)
+![AI Dictionary in use inside KOReader](demo.gif)
 
-## How to Use
+[Features](#features) · [Installation](#installation) · [Settings reference](#settings-reference) · [Vocabulary reports](#vocabulary-reports) · [Updates](#updates-and-saved-data) · [Troubleshooting](#troubleshooting)
 
-To use this plugin, you'll need to do a few things, which I've listed below.
+## Features
 
-1. Get [KoReader](https://koreader.rocks/) installed on your e-reader/device.
-2. Download [the latest release of this plugin](https://github.com/SahandMalaei/ai-dictionary-koreader/releases/latest).
-3. The default AI provider is OpenAI's ChatGPT. Acquire an API key from [the OpenAI platform](https://platform.openai.com/). **Optional**: Alternatively, you can use any OpenAI-compatible AI provider of your own. I personally use [OpenRouter](https://openrouter.ai/api/v1/chat/completions) along with Google's Gemini 2.5 Flash for the best balance between speed and accuracy. You probably need to add some credits to your account, but from experience I can tell you that the personal use of this plugin is practically free (as long as you use fast and cheap models such as GPT5-Nano or Gemini 2.5 Flash). For reference, my own personal use over seven days costs me about 2 cents.
-4. Once you have your API key, rename `configuration.lua.sample` to `configuration.lua` and inside it, replace `YOUR_API_KEY` with your own API key. **Optional**: Alternatively, you can use any OpenAI-compatible endpoint and model by setting them in `configuration.lua`. As said earlier, I personally use [OpenRouter](https://openrouter.ai/api/v1/chat/completions) along with `google/gemini-2.5-flash` for the quick and accurate results. For this, you need to fill out the `text_endpoint` and `text_model` properties of `configuration.lua` with values of your own.
+| Action | What it does |
+| --- | --- |
+| **AI Dictionary** | Defines a word, phrase, or idiom in its current context, with pronunciation, usage tags, an example, synonyms, a simpler paraphrase, and etymology. |
+| **AI Explain** | Explains concepts, characters, places, and allusions in relation to your book. |
+| **AI Simplify** | Rewrites a difficult passage in simpler language. |
 
-```lua
-local CONFIGURATION = {
-    api_key = "YOUR_API_KEY",
-    text_endpoint = "https://api.openai.com/v1/chat/completions",
-    text_model = "gpt-5-nano"
-}
+Inside the answer popup:
 
-return CONFIGURATION
-```
+- Tap **↻** to regenerate an answer, or **✕** to close it.
+- Tap a word or select a phrase in a Dictionary answer to look it up. In Explain, the same gesture explores that topic further.
+- Dictionary and Explain can show a relevant **Wikipedia image** when available; tap it to enlarge.
+- On **Android**, configure voice output to hear dictionary pronunciations using the speaker button.
 
-**Android-Only:** The AI Dictionary popup can also show a Pronounce button on Android when AI voice output is configured. It uses the same `api_key` as text completion. You can use it by setting `voice_endpoint`, `voice_model`, and optionally `voice_voice` in `configuration.lua`:
+I built the dictionary around learning English, including American English pronunciation. You can also choose any other language (even fictional ones) for Dictionary and Explain answers; this setting does not change Simplify or vocabulary reports.
+
+## Installation
+
+You'll need [KOReader](https://koreader.rocks/), a network connection, and an API key from [OpenAI](https://platform.openai.com/), [OpenRouter](https://openrouter.ai/), or another provider supporting streaming OpenAI-compatible Chat Completions. API costs depend on your provider, model, and usage.
+
+1. Download and extract the [latest release](https://github.com/SahandMalaei/ai-dictionary-koreader/releases/latest).
+2. Copy the **`AI_Dictionary.koplugin`** folder into your device's `koreader/plugins` directory. The resulting path should be `koreader/plugins/AI_Dictionary.koplugin/main.lua`.
+3. Now you need to configure the plugin. Settings are saved in `AI_Dictionary.koplugin/configuration.lua`. You can rename [configuration.lua.sample](AI_Dictionary.koplugin/configuration.lua.sample) to `configuration.lua` and edit the file yourself (easier), or edit the settings from the plugin's menu inside KOReader.
+
+    A minimal configuration using the default OpenAI model, [GPT-5 nano](https://developers.openai.com/api/docs/models/gpt-5-nano):
+
+    ```lua
+    local CONFIGURATION = {
+        api_key = "YOUR_API_KEY",
+        text_endpoint = "https://api.openai.com/v1/chat/completions",
+        text_model = "gpt-5-nano",
+    }
+
+    return CONFIGURATION
+    ```
+
+    For [Gemini 2.5 Flash through OpenRouter](https://openrouter.ai/google/gemini-2.5-flash), use an OpenRouter API key and replace these entries inside the table:
+
+    ```lua
+    text_endpoint = "https://openrouter.ai/api/v1/chat/completions",
+    text_model = "google/gemini-2.5-flash",
+    ```
+
+4. Now tap and hold on any word or group of words, and select **AI Dictionary**, **AI Explain**, or **AI Simplify**.
+
+**Tip:** If KOReader's default dictionary opens immediately, disable **Dictionary on single word selection** under **Settings → Taps and gestures → Long-press on text**. Menu placement may vary by KOReader version.
+
+## Settings reference
+| Setting | Purpose / default |
+| --- | --- |
+| `api_key` | Your provider's API key; shared by text and voice requests. |
+| `text_endpoint`, `text_model` | Full Chat Completions URL and model ID; defaults shown above. |
+| `output_language` | Language of Dictionary and Explain answers; `"English"`. Dictionary section labels remain English. |
+| `images` | Show Wikipedia images in Dictionary and Explain; `true`. |
+| `voice_endpoint`, `voice_model`, `voice_voice` | Optional Android pronunciation; see below. |
+| `update_check` | Check for updates at startup; `true`. |
+| `debug_mode` | Show the query prompt alongside the answer for troubleshooting; `false`. |
+| `additional_parameters` | Optional Lua table of extra text API request parameters supported by your provider. |
+
+### Pronunciation on Android
+
+For OpenAI voice output with [GPT-4o mini TTS](https://developers.openai.com/api/docs/models/gpt-4o-mini-tts), add these entries inside the configuration table:
 
 ```lua
 voice_endpoint = "https://api.openai.com/v1/audio/speech",
@@ -36,39 +78,36 @@ voice_model = "gpt-4o-mini-tts",
 voice_voice = "nova",
 ```
 
-5. Copy the folder named `AI_Dictionary.koplugin` into the `koreader/plugins` directory on your device.
-6. You'll most probably want to disable the automatic launch of KOReader's default dictionary functionality on single-word selection. To do that, open KOReader's top menu (tap on the top part of the screen), go to `Settings` (the gear icon), select `Long-press on text` and disable `Dictionary on single word selection`.
-7. You are all set! Now simply select some word(s)/text, and use one of the options the plugins gives you ("AI Dictionary", "AI Explain", "AI English Simplify") to get answers.
+The voice endpoint must accept the same API key as your text endpoint. When configured, audio is generated after each dictionary answer, even before you tap the speaker. Leave `voice_endpoint` or `voice_model` empty to disable it.
 
-## Sample configuration.lua
+## Vocabulary reports
 
-This is the configuration I personally use for the best results (don't forget to fill in your own API key):
+Open **Search (magnifying glass) → AI Dictionary Lookups Report** in KOReader's top menu, choose a timeframe, and tap **Generate Report**. Options range from **Today** to **All Time**. The AI uses your saved lookups to identify a learning pattern and create up to ten fill-in-the-blank exercises with answers.
 
-```lua
-local CONFIGURATION = {
-    api_key = "[YOUR_API_KEY]",
+## Updates and saved data
 
-    text_endpoint = "https://openrouter.ai/api/v1/chat/completions",
-    text_model = "google/gemini-2.5-flash",
+Use **AI Dictionary settings → Check for updates now**, or leave startup checks enabled. Accept an available update, then quit and restart KOReader.
 
-    voice_endpoint = "https://openrouter.ai/api/v1/audio/speech",
-    voice_model = "x-ai/grok-voice-tts-1.0",
-    voice_voice = "Ara"
-}
+The built-in updater preserves `configuration.lua` and `Lookups/`. Keep these when updating manually, too. Dictionary lookup dates, selected words, and surrounding context are stored in `AI_Dictionary.koplugin/Lookups/Lookups.txt`.
 
-return CONFIGURATION
-```
+## Troubleshooting
 
-## What's Next?
+| Problem | What to check |
+| --- | --- |
+| No AI actions in the selection menu | Check the folder path above, enable the plugin in KOReader's plugin management menu if needed, and restart KOReader. |
+| A request fails or returns no text | Check connectivity, API key, account balance, model ID, and the full endpoint URL. The text endpoint must support streaming Chat Completions. |
+| No speaker button or audio | Pronunciation requires Android, a configured voice endpoint and model, and a key valid for that endpoint. Also check media volume. |
+| No image | Enable **Show images**. Some topics have no suitable Wikipedia image. |
+| An answer seems wrong | Try **↻** or select more context. Answers are AI-generated; the Explain prompt asks to avoid fiction spoilers, but cannot guarantee it. |
 
-I'm calling on you—the community—to help expand this plugin with features that might help others read/study/learn better. A few starters:
-1. The plugin is built around English-to-English dictionary lookups, though supporting other languages in the future might make sense. Making it seamless is the main challenge.
-2. The plugin currently keeps a local log of every dictionary lookup. I'm open to suggestions about what kinds of personalized learning material we can create for the user with that.
+## Contributing and support
 
-This plugin wouldn't have been possible without the initial backbone provided by [AskGPT](https://github.com/drewbaumann/AskGPT)—an excellent plugin that lets you talk to ChatGPT directly from inside KOReader. Open source is awesome!
+I'd love to hear what would help you read, study, or learn better. [Share an idea or report a bug](https://github.com/SahandMalaei/ai-dictionary-koreader/issues), or [contribute a pull request](https://github.com/SahandMalaei/ai-dictionary-koreader/pulls). There's plenty of room to make this more useful together.
 
-## Support the Project ❤️
+For bug reports, include your device, KOReader version, plugin version, provider/model, and steps to reproduce. Remove API keys from anything you share.
 
-If you found this project helpful, you can support the work through my [GitHub Sponsor page](https://github.com/sponsors/SahandMalaei).
+This plugin wouldn't have been possible without the initial backbone provided by [AskGPT](https://github.com/drewbaumann/AskGPT), an excellent plugin that lets you talk to ChatGPT directly from inside KOReader. Open source is awesome!
 
-License: GPLv3
+If you find AI Dictionary helpful in your own reading, you can support the work through my [GitHub Sponsors page](https://github.com/sponsors/SahandMalaei). Thank you! ❤️
+
+Licensed under [GPLv3](LICENSE).
