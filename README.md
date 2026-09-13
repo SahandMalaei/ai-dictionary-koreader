@@ -4,7 +4,7 @@ I built AI Dictionary out of personal frustration with the dictionaries availabl
 
 AI Dictionary lets you look up words and idioms, understand references, and simplify passages **in the context of your book**. It uses your selection, nearby text, and the book's title, author, and chapter (when available). Just select some text and choose an action.
 
-![AI Dictionary in use inside KOReader](demo.gif)
+![AI Dictionary in use inside KOReader](demo-v3.gif)
 
 [Features](#features) · [Installation](#installation) · [Settings reference](#settings-reference) · [Vocabulary reports](#vocabulary-reports) · [Updates](#updates-and-saved-data) · [Troubleshooting](#troubleshooting)
 
