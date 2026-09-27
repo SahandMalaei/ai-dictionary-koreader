@@ -10,6 +10,7 @@ local SETTING = "aidictionary_long_press_action"
 local actions = {
   { id = "dictionary", text = _("AI Dictionary"), run = Actions.dictionary },
   { id = "explain", text = _("AI Explain"), run = Actions.explain },
+  { id = "simplify", text = _("AI Simplify"), run = Actions.simplify },
 }
 
 local function current_action()

@@ -34,6 +34,13 @@ function Actions.dictionary(plugin, reader_highlight_instance)
     DictionaryPrompt.for_book_selection())
 end
 
+function Actions.simplify(plugin, reader_highlight_instance)
+  return plugin:Query(reader_highlight_instance, "AI Simplify", false,
+    "I'm an advanced language learner. I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
+    "This is the context where it appears: '...{context}...'\n" ..
+    "Rewrite and simplify it to make it more understandable. Brevity is also important. Give just one output and not several options. Ask no questions at the end.")
+end
+
 function Actions.register(plugin)
   plugin.ui.highlight:addToHighlightDialog("aidictionary_1", ErrorBoundary.wrap("build AI Explain action", function(reader_highlight_instance)
     return {
@@ -50,10 +57,7 @@ function Actions.register(plugin)
       text = _("AI Simplify"),
       enabled = Device:hasClipboard(),
       callback = function()
-        plugin:Query(reader_highlight_instance, "AI Simplify", false,
-          "I'm an advanced language learner. I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
-          "This is the context where it appears: '...{context}...'\n" ..
-          "Rewrite and simplify it to make it more understandable. Brevity is also important. Give just one output and not several options. Ask no questions at the end.")
+        Actions.simplify(plugin, reader_highlight_instance)
       end,
     }
   end))

@@ -134,8 +134,8 @@ assert(LongPress.register(plugin))
 assert(LongPress.register(plugin)) -- idempotent on an existing reader
 Actions.register(plugin)
 local choices, items = menu(highlight)
-assert(#items == 7 and items[5].text == "AI Dictionary" and items[6].text == "AI Explain")
-assert(items[7].text == "Highlight dialog position")
+assert(#items == 8 and items[5].text == "AI Dictionary" and items[6].text == "AI Explain")
+assert(items[7].text == "AI Simplify" and items[8].text == "Highlight dialog position")
 assert_choice(highlight, "Ask with popup dialog")
 
 -- Native single-word override remains independent of the selected AI action.
@@ -159,6 +159,15 @@ highlight.buttons.aidictionary_1(highlight).callback()
 assert(requests[3].title == "AI Explain" and requests[3].preface == false)
 assert(requests[3].prompt == requests[4].prompt and requests[3].parameters == requests[4].parameters)
 assert(requests[3].parameters.plugins[1].id == "web")
+
+choices["AI Simplify"].callback()
+assert_choice(highlight, "AI Simplify")
+release(highlight, "a difficult passage", false)
+highlight.buttons.aidictionary_2(highlight).callback()
+assert(requests[5].title == "AI Simplify" and requests[5].preface == false)
+assert(requests[5].prompt == requests[6].prompt)
+assert(requests[5].parameters == nil and requests[6].parameters == nil)
+assert(requests[5].reader == highlight and requests[5].selection.text == "a difficult passage")
 
 -- A direct long-press needs no clipboard, and ordinary popup calls stay native.
 clipboard = false
@@ -220,9 +229,9 @@ assert(#errors == 2 and errors[1]:find("query failure") and errors[2]:find("nati
 -- A new reader restores the choice and binds queries to the new plugin instance.
 local next_plugin, next_highlight = new_plugin()
 assert(LongPress.register(next_plugin))
-assert_choice(next_highlight, "AI Explain")
+assert_choice(next_highlight, "AI Simplify")
 release(next_highlight, "next book", false)
-assert(requests[#requests].plugin == next_plugin)
+assert(requests[#requests].plugin == next_plugin and requests[#requests].title == "AI Simplify")
 
 -- Removing/disabling the adapter leaves a valid native popup action on restart.
 local _, unmodified_highlight = new_plugin()
