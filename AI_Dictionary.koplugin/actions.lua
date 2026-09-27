@@ -19,19 +19,28 @@ local AI_EXPLAIN_WEB_SEARCH_PARAMETERS = {
   },
 }
 
+function Actions.explain(plugin, reader_highlight_instance)
+  return plugin:Query(reader_highlight_instance, "AI Explain", false,
+    "I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
+    "This is the text context where it appears (use it only as a hint, and don't let it limit your scope): '...{context}...'\n" ..
+    "Use web search economically to identify or verify the book, character, place, term, reference, or allusion if that helps. " ..
+    "Explain it and dive deep in relation to the book, and help me understand it better (like Amazon Kindle's X-Ray, but more concise). " ..
+    "No spoilers if it's fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep your explanation brief (under 90 words, ONLY ONE PARAGRAPH), and ask no questions at the end.",
+    AI_EXPLAIN_WEB_SEARCH_PARAMETERS)
+end
+
+function Actions.dictionary(plugin, reader_highlight_instance)
+  return plugin:Query(reader_highlight_instance, "AI Dictionary", true,
+    DictionaryPrompt.for_book_selection())
+end
+
 function Actions.register(plugin)
   plugin.ui.highlight:addToHighlightDialog("aidictionary_1", ErrorBoundary.wrap("build AI Explain action", function(reader_highlight_instance)
     return {
       text = _("AI Explain"),
       enabled = Device:hasClipboard(),
       callback = function()
-        plugin:Query(reader_highlight_instance, "AI Explain", false,
-          "I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
-          "This is the text context where it appears (use it only as a hint, and don't let it limit your scope): '...{context}...'\n" ..
-          "Use web search economically to identify or verify the book, character, place, term, reference, or allusion if that helps. " ..
-          "Explain it and dive deep in relation to the book, and help me understand it better (like Amazon Kindle's X-Ray, but more concise). " ..
-          "No spoilers if it's fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep your explanation brief (under 90 words, ONLY ONE PARAGRAPH), and ask no questions at the end.",
-          AI_EXPLAIN_WEB_SEARCH_PARAMETERS)
+        Actions.explain(plugin, reader_highlight_instance)
       end,
     }
   end))
@@ -54,8 +63,7 @@ function Actions.register(plugin)
       text = _("AI Dictionary"),
       enabled = Device:hasClipboard(),
       callback = function()
-        plugin:Query(reader_highlight_instance, "AI Dictionary", true,
-          DictionaryPrompt.for_book_selection())
+        Actions.dictionary(plugin, reader_highlight_instance)
       end,
     }
   end))

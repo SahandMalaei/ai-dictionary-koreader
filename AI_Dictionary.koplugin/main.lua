@@ -4,6 +4,7 @@ local Actions = require("actions")
 local Context = require("context")
 local ErrorBoundary = require("error_boundary")
 local Config = require("configuration_manager")
+local LongPress = require("long_press")
 local LookupsReportUI = require("lookups_report_ui")
 local QuerySession = require("query_session")
 local SettingsMenu = require("settings_menu")
@@ -124,6 +125,7 @@ function Benedict:init()
 
   if self.ui and self.ui.highlight then
     ErrorBoundary.call("highlight action registration", Actions.register, self)
+    ErrorBoundary.call("long-press action registration", LongPress.register, self)
   end
 end
 
