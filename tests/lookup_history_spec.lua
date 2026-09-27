@@ -249,6 +249,63 @@ obsolete.callbacks.on_error("stale error")
 assert(obsolete.cancelled and UI.shows == shown)
 finish(); UI.active:onClose()
 
+-- Back is available immediately and abandons queued or partially streamed
+-- recursive lookups, without adding an incomplete answer to forward history.
+for _, kind in ipairs({ "AI Dictionary", "AI Explain" }) do
+  history = start(kind); finish("[None]saved answer")
+  local saved = history:current()
+  local saved_text = UI.active.text
+  UI.active.text_selection_callback("queued lookup", "popup context")
+  local queued = history:current()
+  local queued_action = queued.query_start_action
+  assert(history:can_move(-1) and not history:can_move(1))
+  request_count = #requests
+  go(-1)
+  assert(history:current() == saved and #history.entries == 1 and UI.active.text == saved_text)
+  assert(queued.cancelled and not scheduled[queued_action] and not history:can_move(1))
+  queued_action(); assert(#requests == request_count)
+
+  lookup("partial lookup")
+  local partial = history:current()
+  local partial_request = requests[#requests]
+  partial_request.callbacks.on_delta("", "[Partial]Definition: partial answer\nExample: waiting", 20)
+  local partial_image_job = image_jobs[#image_jobs]
+  local partial_image = partial.image_descriptor
+  assert(history:can_move(-1) and not partial.finished)
+  contains(UI.active.text, "partial answer")
+  go(-1)
+  assert(history:current() == saved and UI.active.text == saved_text)
+  assert(#history.entries == 1 and not history:can_move(1))
+  assert(partial.cancelled and partial_request.cancelled and partial_image_job.cancelled)
+  assert(partial_image.bb == nil and partial_image.hi_bb == nil)
+  shown, log_count = UI.shows, #logs
+  partial_request.callbacks.on_delta("", "[Late]stale delta", 100)
+  partial_request.callbacks.on_done("[Late]stale answer")
+  partial_request.callbacks.on_error("stale error")
+  partial_image_job.callbacks.on_message("stale pixels")
+  partial_image_job.callbacks.on_complete()
+  assert(UI.shows == shown and #logs == log_count)
+  lookup("after cancellation"); finish()
+  assert(#history.entries == 2 and history.entries[1] == saved)
+  UI.active:onClose()
+end
+
+-- Cancelling a regeneration also leaves its completed neighbors intact.
+history = start(); finish("[None]first")
+first = history:current()
+lookup("middle"); finish("[None]middle")
+lookup("last"); finish("[None]last")
+local last = history:current()
+go(-1); regenerate()
+local unfinished = history:current()
+local unfinished_request = requests[#requests]
+assert(history:can_move(-1) and not history:can_move(1))
+go(-1)
+assert(unfinished.cancelled and unfinished_request.cancelled)
+assert(history:current() == first and #history.entries == 2 and history.entries[2] == last)
+go(1); contains(UI.active.text, "last")
+UI.active:onClose()
+
 -- Closing before launch unschedules the query; closing during it cancels all work.
 Query.query(plugin, {}, "AI Dictionary", true, "pending")
 local pending_entry = UI.active.lookup_session

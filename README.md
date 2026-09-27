@@ -20,6 +20,7 @@ Inside the answer popup:
 
 - Tap **↻** to regenerate an answer, or **✕** to close it.
 - Tap a word or select a phrase in a Dictionary answer to look it up. In Explain, the same gesture explores that topic further.
+- Use **‹** and **›** at the bottom to revisit answers and their images without querying again. Arrows appear only when usable; going back during a lookup cancels and discards its unfinished answer. A new lookup from an earlier answer replaces the forward history; regenerating replaces only the current answer. Closing the popup releases this in-memory history.
 - Dictionary and Explain can show a relevant **Wikipedia image** when available; tap it to enlarge.
 - On **Android**, configure voice output to hear dictionary pronunciations using the speaker button.
 
