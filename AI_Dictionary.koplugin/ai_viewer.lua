@@ -21,8 +21,7 @@ local FrameContainer = require("ui/widget/container/framecontainer")
 local GestureRange = require("ui/gesturerange")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local InputDialog = require("ui/widget/inputdialog")
-local HorizontalGroup = require("ui/widget/horizontalgroup")
-local HorizontalSpan = require("ui/widget/horizontalspan")
+local HistoryOverlay = require("history_overlay")
 local LineWidget = require("ui/widget/linewidget")
 local MovableContainer = require("ui/widget/container/movablecontainer")
 local Notification = require("ui/widget/notification")
@@ -103,15 +102,9 @@ local HISTORY_BUTTON_BOTTOM_PADDING = Screen:scaleBySize(6) -- below the circles
 
 local function set_history_button_available(button, available)
   if available then button:enable() else button:disable() end
-  -- Button:hide() only hides icon widgets, so hide our text glyph and outline
-  -- together. Keep their space reserved to avoid shifting the answer layout.
+  -- HistoryOverlay skips unavailable buttons entirely, revealing the content
+  -- underneath them without reserving any space in the layout.
   button.hidden = not available
-  local color = available and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_WHITE
-  button.frame.color = color
-  -- A rectangular white repaint fully erases the previous antialiased circle.
-  button.frame.radius = available and button.radius or 0
-  button.label_widget.fgcolor = color
-  if button.label_widget.update then button.label_widget:update() end
 end
 
 local function scale_size(value, scale, minimum)
@@ -449,11 +442,9 @@ function AIViewer:init()
   end
   local inner_width = self.width - 2 * text_padding_h - 2 * self.text_margin
   local inner_height = 1
-  local history_row = nil
-  local history_height = 0
   if self.lookup_history and self.onHistoryNavigate then
-    local row_width = self.width - 2 * HISTORY_BUTTON_EDGE_PADDING
-    local button_width = math.min(HISTORY_BUTTON_DIAMETER, math.floor(row_width / 2))
+    local available_width = self.width - 2 * HISTORY_BUTTON_EDGE_PADDING
+    local button_width = math.min(HISTORY_BUTTON_DIAMETER, math.floor(available_width / 2))
     local button_content_height = math.max(1,
       button_width - 2 * (HISTORY_BUTTON_BORDER_WIDTH + HISTORY_BUTTON_INNER_PADDING))
     local function history_button(text, offset)
@@ -481,21 +472,6 @@ function AIViewer:init()
     end
     self.history_back_button = history_button("\u{2039}", -1)
     self.history_forward_button = history_button("\u{203A}", 1)
-    history_row = FrameContainer:new {
-      bordersize = 0,
-      margin = 0,
-      padding = 0,
-      padding_left = HISTORY_BUTTON_EDGE_PADDING,
-      padding_right = HISTORY_BUTTON_EDGE_PADDING,
-      padding_bottom = HISTORY_BUTTON_BOTTOM_PADDING,
-      HorizontalGroup:new {
-        allow_mirroring = false,
-        self.history_back_button,
-        HorizontalSpan:new { width = math.max(0, row_width - 2 * button_width) },
-        self.history_forward_button,
-      },
-    }
-    history_height = history_row:getSize().h
   end
   local header_widget = nil
   local header_height = 0
@@ -550,7 +526,7 @@ function AIViewer:init()
         end
       end
     end
-    textw_height = requested_body_height + 2 * text_padding_v + 2 * self.text_margin + history_height
+    textw_height = requested_body_height + 2 * text_padding_v + 2 * self.text_margin
     if header_widget then
       textw_height = textw_height + header_height + self.header_spacing
     end
@@ -596,7 +572,7 @@ function AIViewer:init()
     inner_height = 1
   end
 
-  local body_height = inner_height - history_height
+  local body_height = inner_height
   if header_widget then
     body_height = body_height - header_height - self.header_spacing
   end
@@ -733,7 +709,16 @@ function AIViewer:init()
     bordersize = 0,
     text_group,
   }
-  local content_widget = history_row and VerticalGroup:new { self.textw, history_row } or self.textw
+  local content_widget = self.textw
+  if self.history_back_button then
+    content_widget = HistoryOverlay:new {
+      edge_padding = HISTORY_BUTTON_EDGE_PADDING,
+      bottom_padding = HISTORY_BUTTON_BOTTOM_PADDING,
+      self.textw,
+      self.history_back_button,
+      self.history_forward_button,
+    }
+  end
 
   local frame_widgets = {}
   if self.bottom_sheet then
@@ -922,8 +907,10 @@ function AIViewer:refreshHistoryButtons()
   for offset, button in pairs({ [-1] = self.history_back_button, [1] = self.history_forward_button }) do
     set_history_button_available(button,
       not self:isTextLookupPending() and self.lookup_history:can_move(offset))
-    button:refresh()
   end
+  -- Repaint the underlying text as well when an overlay disappears. A direct
+  -- Button:refresh() would paint an opaque rectangle over that text.
+  UIManager:setDirty(self, "ui")
 end
 
 function AIViewer:isTextLookupPending()
