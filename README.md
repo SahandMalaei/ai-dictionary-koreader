@@ -64,12 +64,30 @@ To launch an AI lookup directly when you release a text selection, choose **AI D
 | --- | --- |
 | `api_key` | Your provider's API key; shared by text and voice requests. |
 | `text_endpoint`, `text_model` | Full Chat Completions URL and model ID; defaults shown above. |
-| `output_language` | Language of Dictionary and Explain answers; `"English"`. Dictionary section labels remain English. |
+| `output_language` | Language of Dictionary, Explain, and experimental Word Wise definitions; `"English"`. Dictionary section labels remain English. |
+| `word_wise_level` | Word Wise reader proficiency: `"Basic"`, `"Intermediate"` (default), or `"Advanced"`. Choose from the reading-level list in the plugin settings. Basic provides the most help. |
+| `word_wise_model` | Optional model ID for Word Wise only; `""` uses `text_model`. Shares the text endpoint and API key, and requests low reasoning effort. |
 | `images` | Show Wikipedia images in Dictionary and Explain; `true`. |
 | `voice_endpoint`, `voice_model`, `voice_voice` | Optional Android pronunciation; see below. |
 | `update_check` | Check for updates at startup; `true`. |
 | `debug_mode` | Show the query prompt alongside the answer for troubleshooting; `false`. |
 | `additional_parameters` | Optional Lua table of extra text API request parameters supported by your provider. |
+
+### Experimental Word Wise (EPUB)
+
+This experimental version automatically scans each EPUB page using the configured text model after a short pause, requesting low reasoning effort for Word Wise queries only. It marks difficult words, expressions, and idioms with subtle wavy underlines, with visual inspiration from [Footcream](https://github.com/Fank1/foot-cream). Tap one to see a contextual meaning of up to five words in a small bubble beside the text. Tap the bubble or elsewhere on the page to dismiss it; the dismissal tap does not also turn a page or open a menu. Tapping another underlined word switches the definition. Long-press selection and the existing dictionary, explain, and simplify actions remain available.
+
+Choose **AI Dictionary settings → Word Wise reading level → Basic / Intermediate / Advanced**. The level describes the reader's proficiency: Advanced marks only the most difficult vocabulary. Meanings follow `output_language`.
+
+Set **AI Dictionary settings → Word Wise model** to use a different model for page scans. With an OpenRouter text endpoint, for example, set `word_wise_model = "deepseek/deepseek-v4.1-flash"` in `configuration.lua`. Word Wise keeps low reasoning enabled and sorts OpenRouter providers by price, preserving any other provider restrictions. Dictionary, Explain, Simplify, and reports continue using `text_model` and their existing routing. Leave the Word Wise model blank to use the main text model. Saving a model change cancels active scans, clears cached definitions, and scans the current page again.
+
+In paginated view, Word Wise queries the current page, then the next page, then the page after that, waiting for each query to finish and reusing cached results. It reads ahead without turning the page and stops two pages ahead, including when displaying two-page spreads. Developers can change `LOOKAHEAD_PAGES` in `word_wise.lua` (the current page is excluded from this count). Scroll view continues to scan the current viewport.
+
+Popup bubbles keep a minimum gap of 2 scaled pixels from the screen edges. Developers can change `POPUP_SCREEN_PADDING` in `word_wise_view.lua`. Both values are script constants, with no entries in the user settings.
+
+Page turns keep existing queries running, with up to five active Word Wise queries. The current page has priority; when a new query needs a slot, the farthest active page is canceled to make room for closer work. Returning to a page reuses its active query or cached definitions. Completed offscreen queries update the cache without changing the visible underlines. Settings changes, reflow, suspension, and closing the book cancel outstanding work; canceled responses are ignored.
+
+Word Wise is always active for EPUBs in this experiment; there is no enable/disable setting. Scans send the current and prefetched page text to your configured provider and use its API allowance; a provider may still process a canceled request it already received. Completed results for up to 16 pages stay in memory while the book is open. Closing the book clears them. Nothing is added to lookup history or vocabulary reports, and PDF documents are not scanned. Network or response errors leave the page usable without a popup error.
 
 ### Pronunciation on Android
 

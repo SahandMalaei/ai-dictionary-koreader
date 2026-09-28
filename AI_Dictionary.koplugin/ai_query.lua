@@ -182,7 +182,7 @@ local function applyDefaultParameters(requestBodyTable, endpointProfile, request
   end
 end
 
-local function buildRequestBody(message_history, configuration, request_parameters)
+local function buildRequestBody(message_history, configuration, opts)
   local api_url = configuration and (configuration.text_endpoint or configuration.provider) or "https://api.openai.com/v1/chat/completions"
   local llm = configuration and (configuration.text_model or configuration.model) or "gpt-5-nano"
   local endpointProfile = getEndpointProfile(api_url, configuration)
@@ -194,7 +194,29 @@ local function buildRequestBody(message_history, configuration, request_paramete
 
   copyParameters(requestBodyTable, configuration and configuration.additional_parameters)
 
-  applyDefaultParameters(requestBodyTable, endpointProfile, request_parameters)
+  applyDefaultParameters(requestBodyTable, endpointProfile, opts.request_parameters)
+  if endpointProfile.id == "openrouter" and hasValue(opts.provider_sort) then
+    -- Override sorting without dropping provider restrictions or changing shared settings.
+    local provider = {}
+    if type(requestBodyTable.provider) == "table" then
+      copyParameters(provider, requestBodyTable.provider)
+    end
+    provider.sort = opts.provider_sort
+    requestBodyTable.provider = provider
+  end
+  if hasValue(opts.model) then
+    requestBodyTable.model = opts.model:match("^%s*(.-)%s*$")
+  end
+  local reasoning_effort = opts.reasoning_effort
+  if reasoning_effort then
+    -- A per-query override must not change defaults or the shared configuration.
+    if endpointProfile.id == "openrouter" then
+      requestBodyTable.reasoning_effort = nil
+      requestBodyTable.reasoning = { effort = reasoning_effort }
+    else
+      requestBodyTable.reasoning_effort = reasoning_effort
+    end
+  end
   requestBodyTable.stream = true
 
   return api_url, json.encode(requestBodyTable)
@@ -205,7 +227,7 @@ local function queryAI(message_history, opts)
 
   local configuration = loadConfiguration()
   local api_key_value = configuration and configuration.api_key or api_key
-  local api_url, requestBody = buildRequestBody(message_history, configuration, opts.request_parameters)
+  local api_url, requestBody = buildRequestBody(message_history, configuration, opts)
 
   if not hasValue(api_key_value) and not isHttpUrl(api_url) then
     if opts.on_error then opts.on_error("No API key configured.") end
