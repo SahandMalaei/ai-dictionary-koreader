@@ -63,10 +63,21 @@ end
 
 function Benedict:saveConfiguration(configuration)
   local saved = ErrorBoundary.call("save configuration", SettingsMenu.save_configuration, self, configuration)
-  if saved and self.word_sense then
-    ErrorBoundary.call("update Word Sense settings", self.word_sense.settings_changed, self.word_sense)
-  end
+  if saved then self:updateWordSense() end
   return saved
+end
+
+function Benedict:updateWordSense()
+  ErrorBoundary.call("update Word Sense settings", function()
+    if not Config.load().word_sense_active then
+      self:onCloseDocument()
+    elseif self.word_sense then
+      self.word_sense:settings_changed()
+    else
+      self.word_sense = require("word_sense").new(self)
+      if self.word_sense then self.word_sense:refresh() end
+    end
+  end)
 end
 
 function Benedict:editConfigurationValue(key, parse_as_literal)
@@ -134,11 +145,8 @@ function Benedict:init()
 end
 
 function Benedict:onReaderReady()
-  ErrorBoundary.call("start Word Sense", function()
-    if self.word_sense then self.word_sense:close() end
-    self.word_sense = require("word_sense").new(self)
-    if self.word_sense then self.word_sense:refresh() end
-  end)
+  self:onCloseDocument()
+  self:updateWordSense()
 end
 
 function Benedict:onPageUpdate()

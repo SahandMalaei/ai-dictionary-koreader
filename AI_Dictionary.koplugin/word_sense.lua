@@ -20,6 +20,7 @@ local CACHE_SIZE = 16
 local LOOKAHEAD_CHUNKS = 2
 
 function WordSense.new(plugin)
+  if not Config.load().word_sense_active then return end
   local source = Source.new(plugin.ui)
   if not source then return end
   local self = setmetatable({

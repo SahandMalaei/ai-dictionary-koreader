@@ -228,7 +228,6 @@ test("reading level defaults and native choice list", function()
   local choices
   for _, item in ipairs(items) do
     if item.text:find("Word Sense reading level", 1, true) then choices = item.sub_item_table end
-    assert(not item.text:find("Enable Word Sense", 1, true))
   end
   assert(choices and #choices == 3)
   for i, level in ipairs({ "Basic", "Intermediate", "Advanced" }) do
@@ -236,6 +235,110 @@ test("reading level defaults and native choice list", function()
     choices[i].callback()
     assert(configuration.word_sense_level == level and choices[i].checked_func())
   end
+end)
+
+test("activation defaults off and requires an explicit boolean true", function()
+  assert(Config.normalize({}).word_sense_active == false)
+  for _, value in ipairs({ false, "true", "false", 1, 0, {} }) do
+    assert(Config.normalize({ word_sense_active = value }).word_sense_active == false)
+  end
+  assert(Config.normalize({ word_sense_active = true }).word_sense_active == true)
+  for _, value in ipairs({ false, true }) do
+    local saved = assert(loadstring(Config.serialize_configuration(
+      Config.normalize({ word_sense_active = value }))))()
+    assert(saved.word_sense_active == value)
+  end
+end)
+
+test("disabled supported books install no hooks and schedule no scans", function()
+  configuration = {}
+  local ui = make_ui(document({ { "word" } }))
+  local tap, hold = ui.highlight.onTap, ui.highlight.onHold
+  assert(not WordSense.new { ui = ui })
+  configuration.word_sense_active = false
+  assert(not WordSense.new { ui = ui })
+  assert(ui.highlight.onTap == tap and ui.highlight.onHold == hold)
+  assert(not next(ui.view.view_modules) and not next(scheduled))
+  assert(ui.document.reads == 0 and #requests == 0)
+end)
+
+test("activation menu is a persistent boolean toggle", function()
+  configuration = {}
+  local plugin = { saveConfiguration = function(_, config) configuration = config; return true end }
+  local toggle
+  for _, item in ipairs(require("settings_menu").get_items(plugin)) do
+    if item.text == "Enable Word Sense" then toggle = item end
+  end
+  assert(toggle and not toggle.checked_func() and not toggle.sub_item_table)
+  toggle.callback()
+  assert(configuration.word_sense_active == true and toggle.checked_func())
+  toggle.callback()
+  assert(configuration.word_sense_active == false and not toggle.checked_func())
+end)
+
+test("saved activation starts and stops the open reader without restarting", function()
+  -- Only dependencies unrelated to Word Sense are stubbed; the plugin's
+  -- configuration save, reader events, controller and settings menu are real.
+  local stubs = {
+    ["ui/widget/container/inputcontainer"] = { new = function(_, value) return value end },
+    actions = {}, context = {}, long_press = {}, lookups_report_ui = {},
+    query_session = {}, tts = {}, updater = {},
+  }
+  local originals = {}
+  for name, stub in pairs(stubs) do
+    originals[name], package.loaded[name] = package.loaded[name], stub
+  end
+  local ok, Main = pcall(assert(loadfile("./AI_Dictionary.koplugin/main.lua")))
+  for name in pairs(stubs) do package.loaded[name] = originals[name] end
+  assert(ok, Main)
+
+  local original_save = Config.save
+  Config.save = function(_, value) configuration = value; return true end
+  configuration = {}
+  local ui = make_ui(document({ { "rare", "word" } }))
+  local tap, hold = ui.highlight.onTap, ui.highlight.onHold
+  local plugin = setmetatable({ ui = ui }, { __index = Main })
+  plugin:onReaderReady()
+  plugin:onPageUpdate()
+  assert(not plugin.word_sense and not next(scheduled) and #requests == 0)
+
+  local toggle
+  for _, item in ipairs(plugin:getSettingsMenuItems()) do
+    if item.text == "Enable Word Sense" then toggle = item end
+  end
+  toggle.callback()
+  local controller = assert(plugin.word_sense)
+  drain()
+  local request = assert(requests[1])
+  assert(ui.highlight.onTap ~= tap and request.cancels == 0)
+  assert(plugin:saveConfiguration(configuration) and plugin.word_sense == controller)
+  drain()
+  assert(#requests == 1)
+
+  Config.save = function() return false, "read-only configuration" end
+  assert(not plugin:saveConfiguration({ word_sense_active = false }))
+  assert(plugin.word_sense == controller and request.cancels == 0)
+  Config.save = function(_, value) configuration = value; return true end
+
+  toggle.callback()
+  assert(not plugin.word_sense and controller.closed and request.cancels == 1)
+  assert(ui.highlight.onTap == tap and ui.highlight.onHold == hold)
+  assert(not next(ui.view.view_modules) and not next(scheduled))
+  complete(request)
+  plugin:onPageUpdate()
+  plugin:onResume()
+  assert(#controller.overlay.boxes == 0 and not next(scheduled) and #requests == 1)
+
+  toggle.callback()
+  assert(plugin.word_sense and plugin.word_sense ~= controller)
+  drain()
+  assert(#requests == 2)
+  complete(requests[2])
+  controller = plugin.word_sense
+  assert(#controller.overlay.boxes > 0)
+  toggle.callback()
+  assert(controller.closed and #controller.overlay.boxes == 0 and not plugin.word_sense)
+  Config.save = original_save
 end)
 
 test("unsupported documents do not install hooks or schedule requests", function()
@@ -1014,7 +1117,7 @@ end)
 
 for _, spec in ipairs(tests) do
   errors, warnings, requests, scheduled, decoded = {}, {}, {}, {}, {}
-  configuration = { output_language = "English", word_sense_level = "Intermediate" }
+  configuration = { output_language = "English", word_sense_active = true, word_sense_level = "Intermediate" }
   local ok, err = xpcall(spec[2], debug.traceback)
   assert(ok, spec[1] .. "\n" .. tostring(err))
   assert(#errors == 0, spec[1] .. "\n" .. table.concat(errors, "\n"))

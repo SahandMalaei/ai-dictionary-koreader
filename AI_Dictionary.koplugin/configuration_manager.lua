@@ -8,6 +8,7 @@ ConfigurationManager.CORE_CONFIGURATION_KEYS = {
   "voice_model",
   "voice_voice",
   "output_language",
+  "word_sense_active",
   "word_sense_level",
   "word_sense_model",
   "images",
@@ -20,6 +21,7 @@ ConfigurationManager.CORE_CONFIGURATION_KEY_SET = {
   text_endpoint = true,
   text_model = true,
   output_language = true,
+  word_sense_active = true,
   word_sense_level = true,
   word_sense_model = true,
   voice_endpoint = true,
@@ -31,6 +33,7 @@ ConfigurationManager.CORE_CONFIGURATION_KEY_SET = {
 }
 
 ConfigurationManager.BOOLEAN_CONFIGURATION_KEYS = {
+  word_sense_active = true,
   debug_mode = true,
   images = true,
   update_check = true,
@@ -48,6 +51,7 @@ ConfigurationManager.CONFIGURATION_LABELS = {
   text_endpoint = "Text endpoint URL",
   text_model = "Text model",
   output_language = "Output language",
+  word_sense_active = "Enable Word Sense",
   word_sense_level = "Word Sense reading level",
   word_sense_model = "Word Sense model",
   additional_parameters = "Additional parameters",
@@ -89,6 +93,7 @@ function ConfigurationManager.normalize(configuration)
   else
     configuration.output_language = configuration.output_language:match("^%s*(.-)%s*$")
   end
+  configuration.word_sense_active = configuration.word_sense_active == true
   local level = configuration.word_sense_level
   if level ~= "Basic" and level ~= "Intermediate" and level ~= "Advanced" then
     configuration.word_sense_level = "Intermediate"

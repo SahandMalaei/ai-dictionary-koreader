@@ -9,6 +9,7 @@ local CONFIGURATION = {
     voice_voice = "nova",
 
     output_language = "English",
+    word_sense_active = false, -- Enable automatic vocabulary annotations
     word_sense_level = "Intermediate", -- Basic, Intermediate, or Advanced
     word_sense_model = "", -- Optional model ID; blank uses text_model. Word Sense requests low reasoning.
 
