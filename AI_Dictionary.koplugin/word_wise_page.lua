@@ -1,4 +1,4 @@
--- Read EPUB text without navigating the document, in small batches. Keeping
+-- Read reflowable text without navigating the document, in small batches. Keeping
 -- xpointers for each token avoids ambiguous string searches for repeated words.
 local Page = {}
 local MAX_WORDS = 50000
@@ -6,9 +6,7 @@ local MAX_TEXT_BYTES = 2 * 1024 * 1024
 
 function Page.supported(ui)
   local doc = ui and ui.document
-  if not doc or type(doc.file) ~= "string" or not doc.file:lower():match("%.epub$") then
-    return false
-  end
+  if not doc then return false end
   for _, method in ipairs({
     "getCurrentPage", "getCurrentPos", "getPageXPointer", "getXPointer",
     "getNextVisibleWordEnd", "getPrevVisibleWordStart", "isXPointerInCurrentPage",

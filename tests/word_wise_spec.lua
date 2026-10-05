@@ -73,8 +73,9 @@ local Prompt = require("word_wise_prompt")
 local View = require("word_wise_view")
 local WordWise = require("word_wise")
 local Chunk = require("word_wise_chunk")
-local EPUB = require("word_wise_epub")
-local PDF = require("word_wise_pdf")
+local Reflowable = require("word_wise_reflowable")
+local Fixed = require("word_wise_fixed")
+local Source = require("word_wise_source")
 local Cache = require("word_wise_cache")
 
 local function pointer(index, ending) return tostring(index) .. (ending and "e" or "s") end
@@ -239,7 +240,7 @@ end)
 
 test("unsupported documents do not install hooks or schedule requests", function()
   local ui = make_ui(document({ { "word" } }))
-  for _, file in ipairs({ "book.pdf", "book.djvu", "book.txt" }) do
+  for _, file in ipairs({ "book.fb2", "book.azw", "book.cbz", "book.epub.zip", "book.epub.tmp", "book" }) do
     ui.document.file = file
     assert(not WordWise.new { ui = ui })
   end
@@ -436,7 +437,7 @@ local function vocabulary(count, prefix)
 end
 
 local function chunk_at(doc, index)
-  local source = EPUB.new(make_ui(doc))
+  local source = Reflowable.new(make_ui(doc))
   local chunk = Chunk.new(source, assert(source:word(pointer(index, true))))
   for _ = 1, 10000 do
     local done, err = Chunk.step(chunk)
@@ -457,6 +458,45 @@ local function ready(pages)
   drain()
   return controller, ui
 end
+
+test("eligible reflowable formats share extraction caching and layout handling", function()
+  for _, file in ipairs({ "book.epub", "book.EPUB", "book.epub3", "book.EPUB3",
+    "book.kepub", "book.KEPUB", "book.kepub.epub", "book.KEPUB.EPUB",
+    "book.mobi", "book.MOBI", "book.txt", "book.TXT", "book.htm", "book.HTM",
+    "book.html", "book.HTML", "book.xhtml", "book.XHTML" }) do
+    local doc = document({ { "difficult", "give", "way" } })
+    doc.file = file
+    local ui = make_ui(doc)
+    local before = #requests
+    local controller = assert(WordWise.new { ui = ui }, file)
+    assert(getmetatable(controller.source) == Reflowable, file)
+    controller:refresh(); drain()
+    assert(#requests == before + 1 and #requests[#requests].page.tokens == 3, file)
+    complete(requests[#requests], { { first = 2, last = 3, meaning = "stop resisting" } }); drain()
+    assert(#controller.overlay.boxes == 1 and controller.overlay.boxes[1].entry.pos0 == "2s", file)
+    doc.hash = 2
+    controller:layout_changed(); drain()
+    assert(#requests == before + 1 and #controller.overlay.boxes == 1, file)
+    controller:close()
+  end
+end)
+
+test("eligible extensions do not bypass missing text or view capabilities", function()
+  for _, method in ipairs({ "getNextVisibleWordEnd", "getPrevVisibleWordEnd",
+    "getPageFromXPointer", "compareXPointers", "getTextFromXPointers", "getScreenBoxesFromPositions" }) do
+    local ui = make_ui(document({ { "word" } }))
+    ui.document.file = "book.mobi"
+    ui.document[method] = false
+    assert(not Source.new(ui) and not WordWise.new { ui = ui }, method)
+    assert(not next(ui.view.view_modules))
+  end
+  local ui = make_ui(document({ { "word" } }))
+  ui.document.file = "book.kepub"
+  ui.view.registerViewModule = false
+  assert(not Source.new(ui))
+  assert(not Source.new(nil) and not Source.new({}) and not Source.new({ document = {} }))
+  assert(#requests == 0 and not next(scheduled))
+end)
 
 local function settle()
   for _ = 1, 100 do
@@ -522,7 +562,7 @@ end)
 test("phrases spanning multiple pages remain visible between their endpoints", function()
   local doc = document({ { "a" }, { "long" }, { "phrase" } })
   doc.page = 2
-  local source = EPUB.new(make_ui(doc))
+  local source = Reflowable.new(make_ui(doc))
   local boxes = source:boxes({ { pos0 = "1s", pos1 = "3e", meaning = "simple meaning" } }, 600, 800)
   assert(#boxes == 1, "the middle page also needs the phrase underline")
 end)
@@ -580,7 +620,7 @@ test("more than 40 pages remain annotated through repeated cache evictions", fun
 end)
 
 test("cache uses recent access and protects visible ranges from late results", function()
-  local source = EPUB.new(make_ui(document({ vocabulary(30) })))
+  local source = Reflowable.new(make_ui(document({ vocabulary(30) })))
   local cache = Cache.new(16, source)
   local function put(i, protected)
     cache:put({ id = pointer(i), pos0 = pointer(i), pos1 = pointer(i, true) }, {}, protected)
@@ -738,7 +778,7 @@ test("empty EPUB fragments are skipped and backwards navigation cannot loop", fu
   local doc = document({ { "before", " ", "after" } })
   local chunk = chunk_at(doc, 1)
   assert(#chunk.words == 2 and chunk.words[2].text == "after")
-  local source = EPUB.new(make_ui(doc))
+  local source = Reflowable.new(make_ui(doc))
   local last = source:word("3e")
   assert(source:previous(last).text == "before")
   doc.getPrevVisibleWordEnd = function(_, pos) return pos end
@@ -791,7 +831,7 @@ end
 test("PDF chunks preserve paragraph boundaries and native occurrence coordinates", function()
   local ui = pdf_ui({ { pdf_line(vocabulary(150), 10), pdf_line(vocabulary(150), 50),
     pdf_line({ "extra" }, 90), pdf_line({ "excluded" }, 130) } })
-  local source = PDF.new(ui)
+  local source = Fixed.new(ui)
   local chunk = Chunk.new(source, source:word(1, 1))
   while not Chunk.step(chunk) do end
   assert(chunk.count == 301 and #chunk.words == 301 and chunk.pos0.index == 1)
@@ -802,7 +842,7 @@ end)
 
 test("PDF continuation across physical pages includes the whole paragraph", function()
   local ui = pdf_ui({ { pdf_line({ "give" }, 10) }, { pdf_line({ "way" }, 10), pdf_line(vocabulary(301), 50) } })
-  local source = PDF.new(ui)
+  local source = Fixed.new(ui)
   local chunk = Chunk.new(source, source:word(2, 1))
   while not Chunk.step(chunk) do end
   assert(chunk.words[1].text == "give" and chunk.words[2].text == "way" and chunk.count == 303)
@@ -837,7 +877,7 @@ test("PDF scroll signatures include every visible page and its position", functi
   ui.view.page_scroll = true
   ui.view.page_states = { { page = 1, zoom = 1, visible_area = { y = 0 } },
     { page = 2, zoom = 1, visible_area = { y = 0 } } }
-  local source = PDF.new(ui)
+  local source = Fixed.new(ui)
   local viewport = source:viewport()
   assert(source:step_viewport(viewport) and #viewport.words == 2)
   local signature = source:signature(600, 800)
@@ -851,13 +891,68 @@ local function forbid_pdf_ocr(doc)
   doc.koptinterface = { getNativeOCRWord = forbidden }
 end
 
+test("PDF and DjVu share embedded text extraction and never invoke OCR", function()
+  for _, file in ipairs({ "book.pdf", "book.PDF", "book.djvu", "book.DjVu", "book.djv", "book.DJV" }) do
+    local ui = pdf_ui({ { pdf_line({ "digital", "text" }, 10) } })
+    ui.document.file = file
+    forbid_pdf_ocr(ui.document)
+    local before = #requests
+    local controller = assert(WordWise.new { ui = ui }, file)
+    assert(getmetatable(controller.source) == Fixed, file)
+    controller:refresh(); drain()
+    assert(#requests == before + 1 and requests[#requests].page.tokens[1].text == "digital", file)
+    complete(requests[#requests]); drain()
+    assert(#controller.overlay.boxes == 1, file)
+    ui.view.state.zoom = 2
+    controller:layout_changed(); drain()
+    assert(#requests == before + 1 and controller.overlay.boxes[1].box.w == 30, file)
+    controller:close()
+  end
+end)
+
+test("alternate providers choose an adapter by document APIs instead of extension", function()
+  for _, file in ipairs({ "book.epub", "book.epub3", "book.kepub", "book.mobi", "book.txt", "book.html", "book.xhtml" }) do
+    local ui = pdf_ui({ { pdf_line({ "alternate", "provider" }, 10) } })
+    ui.document.file = file
+    forbid_pdf_ocr(ui.document)
+    local before = #requests
+    local controller = assert(WordWise.new { ui = ui }, file)
+    assert(getmetatable(controller.source) == Fixed, file)
+    controller:refresh(); drain()
+    assert(#requests == before + 1, file)
+    complete(requests[#requests]); drain()
+    assert(#controller.overlay.boxes == 1, file)
+    controller:close()
+  end
+end)
+
+test("fixed text routing rejects incomplete APIs and image-only DjVu sends no queries", function()
+  for _, method in ipairs({ "getPageTextBoxes", "nativeToPageRectTransform" }) do
+    local ui = pdf_ui({ {} })
+    ui.document.file = "book.djvu"
+    ui.document[method] = false
+    assert(not Source.new(ui) and not WordWise.new { ui = ui }, method)
+  end
+  local ui = pdf_ui({ {} })
+  ui.document.file = "book.djvu"
+  ui.view.pageToScreenTransform = false
+  assert(not Source.new(ui))
+  ui = pdf_ui({ {} })
+  ui.document.file = "book.djvu"
+  forbid_pdf_ocr(ui.document)
+  local controller = assert(WordWise.new { ui = ui })
+  controller:refresh(); drain()
+  assert(#requests == 0 and #controller.overlay.boxes == 0 and not controller.scan_failed)
+  controller:close()
+end)
+
 test("image-only PDF regions are skipped without any recognition fallback", function()
   local line = pdf_line({ "placeholder" }, 10)
   line[1].word = nil
   local ui = pdf_ui({ { line } })
   forbid_pdf_ocr(ui.document)
   ui.document.configurable.text_wrap = 1
-  local source = PDF.new(ui)
+  local source = Fixed.new(ui)
   assert(not source:word(1, 1))
   local controller = assert(WordWise.new { ui = ui })
   controller:refresh(); drain()
@@ -884,19 +979,19 @@ test("mixed PDF regions keep only embedded words and nil text layers are empty",
   line[2].word = nil
   local ui = pdf_ui({ { line }, {} })
   forbid_pdf_ocr(ui.document)
-  local source = PDF.new(ui)
+  local source = Fixed.new(ui)
   local viewport = source:viewport(); assert(source:step_viewport(viewport))
   assert(#viewport.words == 2 and source:text(viewport.words) == "digital text")
   assert(viewport.words[2].pos0.box.x == line[4].x0)
   ui.document.getPageTextBoxes = function() return nil end
-  source = PDF.new(ui)
+  source = Fixed.new(ui)
   viewport = source:viewport(); assert(source:step_viewport(viewport) and #viewport.words == 0)
 end)
 
 test("PDF hyphenation joins line continuations while preserving paragraph breaks", function()
   local ui = pdf_ui({ { pdf_line({ "hyphen-" }, 10), pdf_line({ "ated" }, 25),
     pdf_line({ "paragraph-" }, 80), pdf_line({ "break" }, 130) } })
-  local source = PDF.new(ui)
+  local source = Fixed.new(ui)
   local viewport = source:viewport(); assert(source:step_viewport(viewport))
   assert(source:text(viewport.words) == "hyphenated\n\nparagraph-\n\nbreak")
 end)

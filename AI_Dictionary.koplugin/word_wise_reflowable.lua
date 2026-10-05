@@ -1,28 +1,29 @@
+-- Reflowable text from crengine, shared across eligible ebook formats.
 local Page = require("word_wise_page")
-local EPUB = {}
-EPUB.__index = EPUB
+local Reflowable = {}
+Reflowable.__index = Reflowable
 
-function EPUB.supported(ui)
+function Reflowable.supported(ui)
   return Page.supported(ui) and type(ui.document.getPrevVisibleWordEnd) == "function"
     and type(ui.document.compareXPointers) == "function"
     and type(ui.document.getPageFromXPointer) == "function"
 end
 
-function EPUB.new(ui)
-  return setmetatable({ ui = ui, doc = ui.document }, EPUB)
+function Reflowable.new(ui)
+  return setmetatable({ ui = ui, doc = ui.document }, Reflowable)
 end
 
-function EPUB:compare(a, b)
+function Reflowable:compare(a, b)
   local order = self.doc:compareXPointers(a, b)
   if order == nil then error("Invalid Word Wise document position") end
   return -order -- KOReader uses +1 for a position BEFORE another position.
 end
 
-function EPUB:key(pos) return pos end
-function EPUB:page(pos) return self.doc:getPageFromXPointer(pos) end
-function EPUB:current_page() return self.doc:getCurrentPage() end
+function Reflowable:key(pos) return pos end
+function Reflowable:page(pos) return self.doc:getPageFromXPointer(pos) end
+function Reflowable:current_page() return self.doc:getCurrentPage() end
 
-function EPUB:word(ending)
+function Reflowable:word(ending)
   if not ending or ending == "" then return end
   local start = self.doc:getPrevVisibleWordStart(ending)
   if not start or start == ending then return end
@@ -32,7 +33,7 @@ function EPUB:word(ending)
   end
 end
 
-function EPUB:next(word)
+function Reflowable:next(word)
   local cursor = word.pos1
   for _ = 1, 256 do
     local ending = self.doc:getNextVisibleWordEnd(cursor)
@@ -45,9 +46,9 @@ function EPUB:next(word)
   error("Too many empty text fragments")
 end
 
-function EPUB:after(pos) return self:next({ pos1 = pos }) end
+function Reflowable:after(pos) return self:next({ pos1 = pos }) end
 
-function EPUB:previous(word)
+function Reflowable:previous(word)
   local cursor = word.pos0
   for _ = 1, 256 do
     local ending = self.doc:getPrevVisibleWordEnd(cursor)
@@ -60,7 +61,7 @@ function EPUB:previous(word)
   error("Too many empty text fragments")
 end
 
-function EPUB:boundary(a, b)
+function Reflowable:boundary(a, b)
   -- crengine inserts newlines at block/paragraph boundaries, including <br>,
   -- but preserves inline formatting. Include both words, so an empty endpoint
   -- cannot hide a boundary from the engine's range text collector.
@@ -69,18 +70,18 @@ function EPUB:boundary(a, b)
   return text:find("\n", 1, true) ~= nil
 end
 
-function EPUB:text(words)
+function Reflowable:text(words)
   if #words == 0 then return "" end
   local text = self.doc:getTextFromXPointers(words[1].pos0, words[#words].pos1)
   if type(text) ~= "string" then error("Could not read paragraph text") end
   return text
 end
 
-function EPUB:viewport() return Page.new(self.ui) end
-function EPUB:step_viewport(page) return Page.step(self.doc, page) end
-function EPUB:signature(w, h) return Page.signature(self.ui, w, h) end
+function Reflowable:viewport() return Page.new(self.ui) end
+function Reflowable:step_viewport(page) return Page.step(self.doc, page) end
+function Reflowable:signature(w, h) return Page.signature(self.ui, w, h) end
 
-function EPUB:boxes(entries, w, h)
+function Reflowable:boxes(entries, w, h)
   local visible = {}
   for _, entry in ipairs(entries) do
     local ok, intersects = pcall(function()
@@ -105,4 +106,4 @@ function EPUB:boxes(entries, w, h)
   return Page.boxes(self.doc, visible, w, h)
 end
 
-return EPUB
+return Reflowable

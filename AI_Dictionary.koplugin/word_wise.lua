@@ -2,8 +2,7 @@ local Config = require("configuration_manager")
 local ErrorBoundary = require("error_boundary")
 local Cache = require("word_wise_cache")
 local Chunk = require("word_wise_chunk")
-local EPUB = require("word_wise_epub")
-local PDF = require("word_wise_pdf")
+local Source = require("word_wise_source")
 local Prompt = require("word_wise_prompt")
 local Requests = require("word_wise_requests")
 local Screen = require("device").screen
@@ -21,9 +20,8 @@ local CACHE_SIZE = 16
 local LOOKAHEAD_CHUNKS = 2
 
 function WordWise.new(plugin)
-  local adapter = EPUB.supported(plugin.ui) and EPUB or PDF.supported(plugin.ui) and PDF
-  if not adapter then return end
-  local source = adapter.new(plugin.ui)
+  local source = Source.new(plugin.ui)
+  if not source then return end
   local self = setmetatable({
     ui = plugin.ui, source = source, generation = 0, overlay = View.new(),
     cache = Cache.new(CACHE_SIZE, source),
@@ -180,7 +178,7 @@ function WordWise:extract(step, done)
   local generation, signature = self.generation, self.page_signature
   local function advance()
     if not self:current(generation, signature) then return end
-    -- Extracting EPUB text clears the engine's selection. Pause before every
+    -- Extracting reflowable text clears the engine's selection. Pause before every
     -- batch while KOReader owns a live selection.
     if self:selecting() then self:schedule(0.3, advance); return end
     local ok, finished, err = pcall(step)
