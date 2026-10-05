@@ -62,7 +62,22 @@ function Benedict:getSettingsMenuItems()
 end
 
 function Benedict:saveConfiguration(configuration)
-  return ErrorBoundary.call("save configuration", SettingsMenu.save_configuration, self, configuration)
+  local saved = ErrorBoundary.call("save configuration", SettingsMenu.save_configuration, self, configuration)
+  if saved then self:updateWordSense() end
+  return saved
+end
+
+function Benedict:updateWordSense()
+  ErrorBoundary.call("update Word Sense settings", function()
+    if not Config.load().word_sense_active then
+      self:onCloseDocument()
+    elseif self.word_sense then
+      self.word_sense:settings_changed()
+    else
+      self.word_sense = require("word_sense").new(self)
+      if self.word_sense then self.word_sense:refresh() end
+    end
+  end)
 end
 
 function Benedict:editConfigurationValue(key, parse_as_literal)
@@ -126,6 +141,46 @@ function Benedict:init()
   if self.ui and self.ui.highlight then
     ErrorBoundary.call("highlight action registration", Actions.register, self)
     ErrorBoundary.call("long-press action registration", LongPress.register, self)
+  end
+end
+
+function Benedict:onReaderReady()
+  self:onCloseDocument()
+  self:updateWordSense()
+end
+
+function Benedict:onPageUpdate()
+  if self.word_sense then
+    ErrorBoundary.call("update Word Sense page", self.word_sense.refresh, self.word_sense)
+  end
+end
+
+Benedict.onPosUpdate = Benedict.onPageUpdate
+
+function Benedict:onDocumentRerendered()
+  if self.word_sense then
+    ErrorBoundary.call("refresh Word Sense layout", self.word_sense.layout_changed, self.word_sense)
+  end
+end
+
+Benedict.onSetDimensions = Benedict.onDocumentRerendered
+
+function Benedict:onSuspend()
+  if self.word_sense then
+    ErrorBoundary.call("suspend Word Sense", self.word_sense.suspend, self.word_sense)
+  end
+end
+
+function Benedict:onResume()
+  if self.word_sense then
+    ErrorBoundary.call("resume Word Sense", self.word_sense.resume, self.word_sense)
+  end
+end
+
+function Benedict:onCloseDocument()
+  if self.word_sense then
+    ErrorBoundary.call("close Word Sense", self.word_sense.close, self.word_sense)
+    self.word_sense = nil
   end
 end
 

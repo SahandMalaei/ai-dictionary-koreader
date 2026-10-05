@@ -44,7 +44,9 @@ function SettingsMenu.edit_configuration_value(plugin, key, parse_as_literal)
     title = "Edit " .. label,
     input = input_value,
     input_type = current_type == "number" and "number" or "text",
-    description = (parse_as_literal or current_type == "table") and "Enter a Lua literal: string, number, boolean, or table." or nil,
+    description = key == "word_sense_model"
+      and "Model ID for Word Sense. Leave blank to use Text model. Uses the same endpoint and API key, with low reasoning enabled."
+      or ((parse_as_literal or current_type == "table") and "Enter a Lua literal: string, number, boolean, or table." or nil),
     buttons = {
       {
         {
@@ -198,7 +200,27 @@ function SettingsMenu.get_items(plugin)
     local label = Config.CONFIGURATION_LABELS[key] or tostring(key)
     written[key] = true
 
-    if type(value) == "boolean" or Config.BOOLEAN_CONFIGURATION_KEYS[key] then
+    if key == "word_sense_level" then
+      local choices = {}
+      for _, level in ipairs({ "Basic", "Intermediate", "Advanced" }) do
+        choices[#choices + 1] = {
+          text = level,
+          radio = true,
+          checked_func = function() return Config.load().word_sense_level == level end,
+          callback = ErrorBoundary.wrap("set Word Sense reading level", function()
+            local updated_configuration = Config.load()
+            updated_configuration.word_sense_level = level
+            plugin:saveConfiguration(updated_configuration)
+          end),
+        }
+      end
+      table.insert(items, {
+        text = label .. ": " .. value,
+        text_func = function() return label .. ": " .. Config.load().word_sense_level end,
+        help_text = "Your reading level. Basic gives the most vocabulary help; Advanced marks only difficult words and expressions.",
+        sub_item_table = choices,
+      })
+    elseif type(value) == "boolean" or Config.BOOLEAN_CONFIGURATION_KEYS[key] then
       table.insert(items, {
         text = label,
         checked_func = ErrorBoundary.wrap("read boolean setting", function() return Config.load()[key] == true end),
