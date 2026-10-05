@@ -1,4 +1,4 @@
--- Run from the repository root: luajit tests/word_wise_spec.lua
+-- Run from the repository root: luajit tests/word_sense_spec.lua
 -- KOReader geometry, scheduling, JSON decoding and networking are mocked;
 -- page extraction, validation, rendering and lifecycle code are real.
 package.path = "./AI_Dictionary.koplugin/?.lua;" .. package.path
@@ -68,15 +68,15 @@ end
 local Config = require("configuration_manager")
 local configuration
 Config.load = function() return Config.normalize(configuration) end
-local Page = require("word_wise_page")
-local Prompt = require("word_wise_prompt")
-local View = require("word_wise_view")
-local WordWise = require("word_wise")
-local Chunk = require("word_wise_chunk")
-local Reflowable = require("word_wise_reflowable")
-local Fixed = require("word_wise_fixed")
-local Source = require("word_wise_source")
-local Cache = require("word_wise_cache")
+local Page = require("word_sense_page")
+local Prompt = require("word_sense_prompt")
+local View = require("word_sense_view")
+local WordSense = require("word_sense")
+local Chunk = require("word_sense_chunk")
+local Reflowable = require("word_sense_reflowable")
+local Fixed = require("word_sense_fixed")
+local Source = require("word_sense_source")
+local Cache = require("word_sense_cache")
 
 local function pointer(index, ending) return tostring(index) .. (ending and "e" or "s") end
 local function index_of(xp) return tonumber(xp:match("^(%d+)")) end
@@ -174,7 +174,7 @@ end
 
 local function start(pages)
   local ui = make_ui(document(pages or { { "bear", "give", "way", "bear" }, { "rare", "word" } }))
-  local controller = assert(WordWise.new { ui = ui })
+  local controller = assert(WordSense.new { ui = ui })
   controller:refresh()
   return controller, ui
 end
@@ -221,20 +221,20 @@ local tests = {}
 local function test(name, fn) tests[#tests + 1] = { name, fn } end
 
 test("reading level defaults and native choice list", function()
-  assert(Config.normalize({}).word_wise_level == "Intermediate")
-  assert(Config.normalize({ word_wise_level = "invalid" }).word_wise_level == "Intermediate")
+  assert(Config.normalize({}).word_sense_level == "Intermediate")
+  assert(Config.normalize({ word_sense_level = "invalid" }).word_sense_level == "Intermediate")
   local plugin = { saveConfiguration = function(_, config) configuration = config; return true end }
   local items = require("settings_menu").get_items(plugin)
   local choices
   for _, item in ipairs(items) do
-    if item.text:find("Word Wise reading level", 1, true) then choices = item.sub_item_table end
-    assert(not item.text:find("Enable Word Wise", 1, true))
+    if item.text:find("Word Sense reading level", 1, true) then choices = item.sub_item_table end
+    assert(not item.text:find("Enable Word Sense", 1, true))
   end
   assert(choices and #choices == 3)
   for i, level in ipairs({ "Basic", "Intermediate", "Advanced" }) do
     assert(choices[i].text == level and choices[i].radio)
     choices[i].callback()
-    assert(configuration.word_wise_level == level and choices[i].checked_func())
+    assert(configuration.word_sense_level == level and choices[i].checked_func())
   end
 end)
 
@@ -242,32 +242,32 @@ test("unsupported documents do not install hooks or schedule requests", function
   local ui = make_ui(document({ { "word" } }))
   for _, file in ipairs({ "book.fb2", "book.azw", "book.cbz", "book.epub.zip", "book.epub.tmp", "book" }) do
     ui.document.file = file
-    assert(not WordWise.new { ui = ui })
+    assert(not WordSense.new { ui = ui })
   end
   ui.document.file, ui.document.getNextVisibleWordEnd = "book.epub", false
-  assert(not WordWise.new { ui = ui })
+  assert(not WordSense.new { ui = ui })
   assert(not next(scheduled) and not next(ui.view.view_modules))
 end)
 
-test("Word Wise model setting is optional, editable and saved as a string", function()
-  assert(Config.normalize({}).word_wise_model == "")
+test("Word Sense model setting is optional, editable and saved as a string", function()
+  assert(Config.normalize({}).word_sense_model == "")
   for _, invalid in ipairs({ false, {}, 12, " \t ", "bad\nmodel" }) do
-    assert(Config.normalize({ word_wise_model = invalid }).word_wise_model == "")
+    assert(Config.normalize({ word_sense_model = invalid }).word_sense_model == "")
   end
   local model = "deepseek/deepseek-v4.1-flash"
-  local normalized = Config.normalize({ word_wise_model = "  " .. model .. "  " })
-  assert(normalized.word_wise_model == model)
+  local normalized = Config.normalize({ word_sense_model = "  " .. model .. "  " })
+  assert(normalized.word_sense_model == model)
   local saved = assert(loadstring(Config.serialize_configuration(normalized)))()
-  assert(saved.word_wise_model == model)
-  assert(Config.display_value("word_wise_model", "") == "Use text model")
+  assert(saved.word_sense_model == model)
+  assert(Config.display_value("word_sense_model", "") == "Use text model")
   local edited
   local items = require("settings_menu").get_items({
     editConfigurationValue = function(_, key, literal) edited = { key = key, literal = literal } end,
   })
   for _, item in ipairs(items) do
-    if item.text == "Word Wise model: Use text model" then item.callback() end
+    if item.text == "Word Sense model: Use text model" then item.callback() end
   end
-  assert(edited and edited.key == "word_wise_model" and edited.literal == false)
+  assert(edited and edited.key == "word_sense_model" and edited.literal == false)
 end)
 
 test("visible extraction keeps first and last words and exact occurrences", function()
@@ -311,7 +311,7 @@ test("parser validates definitions, phrase spans, overlap and repeated words", f
 end)
 
 test("priority protects nearer work, and cancel callbacks cannot release replacement jobs", function()
-  local pool = require("word_wise_requests").new(2)
+  local pool = require("word_sense_requests").new(2)
   local first = assert(pool:reserve("first", 10, 10))
   local second = assert(pool:reserve("second", 11, 10))
   assert(not pool:reserve("distant", 20, 10))
@@ -347,7 +347,7 @@ test("an outside tap dismisses the bubble before other reader tap zones", functi
   local word = { pos = { x = 15, y = 110 } }
   local outside = { pos = { x = 500, y = 500 } }
   assert(ui.highlight:onTap(nil, word) and controller.overlay.popup)
-  local zone = assert(ui._zones.ai_dictionary_word_wise_popup_tap)
+  local zone = assert(ui._zones.ai_dictionary_word_sense_popup_tap)
   local overrides = {}
   for _, id in ipairs(zone.def.overrides) do overrides[id] = true end
   assert(overrides.readerhighlight_tap and overrides.readerlink_tap
@@ -369,13 +369,13 @@ test("an outside tap dismisses the bubble before other reader tap zones", functi
   -- A later-installed zone is covered when the next bubble opens.
   ui._zones.custom_tap = { def = { ges = "tap" } }
   assert(ui.highlight:onTap(nil, word))
-  zone = ui._zones.ai_dictionary_word_wise_popup_tap
+  zone = ui._zones.ai_dictionary_word_sense_popup_tap
   local found
   for _, id in ipairs(zone.def.overrides) do if id == "custom_tap" then found = true end end
   assert(found)
   assert(zone.handler(word) == true and controller.overlay.popup, "marked-word taps can switch definitions")
   controller:close()
-  assert(not ui._zones.ai_dictionary_word_wise_popup_tap and ui._zones.readerlink_tap)
+  assert(not ui._zones.ai_dictionary_word_sense_popup_tap and ui._zones.readerlink_tap)
 end)
 
 test("wrapped phrase boxes are clipped and bad geometry is isolated", function()
@@ -394,7 +394,7 @@ test("bubble placement respects scaled screen padding and painting does not quer
   local view = View.new()
   local entry = { meaning = "very lengthy contextual vocabulary definition" }
   -- The screen gap is deliberately tunable in the script, not fixed by this test.
-  local view_file = assert(io.open("./AI_Dictionary.koplugin/word_wise_view.lua", "r"))
+  local view_file = assert(io.open("./AI_Dictionary.koplugin/word_sense_view.lua", "r"))
   local view_source = view_file:read("*a")
   view_file:close()
   local popup_padding = assert(tonumber(view_source:match("local POPUP_SCREEN_PADDING%s*=%s*(%d+)")))
@@ -468,7 +468,7 @@ test("eligible reflowable formats share extraction caching and layout handling",
     doc.file = file
     local ui = make_ui(doc)
     local before = #requests
-    local controller = assert(WordWise.new { ui = ui }, file)
+    local controller = assert(WordSense.new { ui = ui }, file)
     assert(getmetatable(controller.source) == Reflowable, file)
     controller:refresh(); drain()
     assert(#requests == before + 1 and #requests[#requests].page.tokens == 3, file)
@@ -487,7 +487,7 @@ test("eligible extensions do not bypass missing text or view capabilities", func
     local ui = make_ui(document({ { "word" } }))
     ui.document.file = "book.mobi"
     ui.document[method] = false
-    assert(not Source.new(ui) and not WordWise.new { ui = ui }, method)
+    assert(not Source.new(ui) and not WordSense.new { ui = ui }, method)
     assert(not next(ui.view.view_modules))
   end
   local ui = make_ui(document({ { "word" } }))
@@ -692,7 +692,7 @@ test("meaning settings cancel all requests and reject late callbacks", function(
   local controller, ui = ready()
   for page = 2, 5 do turn(controller, ui, page) end
   assert(active_count(controller) == 5)
-  configuration.word_wise_model, configuration.output_language = "different-model", "French"
+  configuration.word_sense_model, configuration.output_language = "different-model", "French"
   controller:settings_changed()
   for _, request in ipairs(requests) do
     assert(request.cancels == 1)
@@ -855,7 +855,7 @@ end)
 
 test("PDF definitions survive zoom crop and reflow with transformed underlines", function()
   local ui = pdf_ui({ { pdf_line({ "difficult." }, 20) }, { pdf_line({ "another." }, 20) } })
-  local controller = assert(WordWise.new { ui = ui })
+  local controller = assert(WordSense.new { ui = ui })
   controller:refresh(); drain()
   assert(#requests == 1 and #requests[1].page.tokens == 2)
   complete(requests[1]); drain()
@@ -886,7 +886,7 @@ test("PDF scroll signatures include every visible page and its position", functi
 end)
 
 local function forbid_pdf_ocr(doc)
-  local function forbidden() error("Word Wise must only read embedded PDF text") end
+  local function forbidden() error("Word Sense must only read embedded PDF text") end
   doc.getTextBoxes, doc.getOCRWord, doc.getOCRText = forbidden, forbidden, forbidden
   doc.koptinterface = { getNativeOCRWord = forbidden }
 end
@@ -897,7 +897,7 @@ test("PDF and DjVu share embedded text extraction and never invoke OCR", functio
     ui.document.file = file
     forbid_pdf_ocr(ui.document)
     local before = #requests
-    local controller = assert(WordWise.new { ui = ui }, file)
+    local controller = assert(WordSense.new { ui = ui }, file)
     assert(getmetatable(controller.source) == Fixed, file)
     controller:refresh(); drain()
     assert(#requests == before + 1 and requests[#requests].page.tokens[1].text == "digital", file)
@@ -916,7 +916,7 @@ test("alternate providers choose an adapter by document APIs instead of extensio
     ui.document.file = file
     forbid_pdf_ocr(ui.document)
     local before = #requests
-    local controller = assert(WordWise.new { ui = ui }, file)
+    local controller = assert(WordSense.new { ui = ui }, file)
     assert(getmetatable(controller.source) == Fixed, file)
     controller:refresh(); drain()
     assert(#requests == before + 1, file)
@@ -931,7 +931,7 @@ test("fixed text routing rejects incomplete APIs and image-only DjVu sends no qu
     local ui = pdf_ui({ {} })
     ui.document.file = "book.djvu"
     ui.document[method] = false
-    assert(not Source.new(ui) and not WordWise.new { ui = ui }, method)
+    assert(not Source.new(ui) and not WordSense.new { ui = ui }, method)
   end
   local ui = pdf_ui({ {} })
   ui.document.file = "book.djvu"
@@ -940,7 +940,7 @@ test("fixed text routing rejects incomplete APIs and image-only DjVu sends no qu
   ui = pdf_ui({ {} })
   ui.document.file = "book.djvu"
   forbid_pdf_ocr(ui.document)
-  local controller = assert(WordWise.new { ui = ui })
+  local controller = assert(WordSense.new { ui = ui })
   controller:refresh(); drain()
   assert(#requests == 0 and #controller.overlay.boxes == 0 and not controller.scan_failed)
   controller:close()
@@ -954,7 +954,7 @@ test("image-only PDF regions are skipped without any recognition fallback", func
   ui.document.configurable.text_wrap = 1
   local source = Fixed.new(ui)
   assert(not source:word(1, 1))
-  local controller = assert(WordWise.new { ui = ui })
+  local controller = assert(WordSense.new { ui = ui })
   controller:refresh(); drain()
   assert(#requests == 0 and #controller.overlay.boxes == 0 and not controller.scan_failed)
   controller:close()
@@ -964,7 +964,7 @@ test("embedded PDF text is used even when KOReader has forced OCR enabled", func
   local ui = pdf_ui({ { pdf_line({ "digital", "text" }, 10) } })
   ui.document.configurable.forced_ocr = 1
   forbid_pdf_ocr(ui.document)
-  local controller = assert(WordWise.new { ui = ui })
+  local controller = assert(WordSense.new { ui = ui })
   controller:refresh(); drain()
   assert(#requests == 1 and requests[1].page.tokens[1].text == "digital")
   complete(requests[1]); drain()
@@ -998,7 +998,7 @@ end)
 
 test("blank PDF pages send no requests and malformed coordinates do not crash the reader", function()
   local ui = pdf_ui({ {}, { pdf_line({ "word" }, 10) } })
-  local controller = assert(WordWise.new { ui = ui })
+  local controller = assert(WordSense.new { ui = ui })
   controller:refresh(); drain(); assert(#requests == 0)
   ui.view.state.page = 2
   controller:refresh(); drain(); assert(#requests == 1)
@@ -1006,7 +1006,7 @@ test("blank PDF pages send no requests and malformed coordinates do not crash th
   local line = pdf_line({ "word" }, 10)
   line[1].x0 = nil
   ui = pdf_ui({ { line } })
-  controller = assert(WordWise.new { ui = ui })
+  controller = assert(WordSense.new { ui = ui })
   controller:refresh(); drain()
   assert(controller.scan_failed and #requests == 1 and #warnings > 0)
   controller:close()
@@ -1014,11 +1014,11 @@ end)
 
 for _, spec in ipairs(tests) do
   errors, warnings, requests, scheduled, decoded = {}, {}, {}, {}, {}
-  configuration = { output_language = "English", word_wise_level = "Intermediate" }
+  configuration = { output_language = "English", word_sense_level = "Intermediate" }
   local ok, err = xpcall(spec[2], debug.traceback)
   assert(ok, spec[1] .. "\n" .. tostring(err))
   assert(#errors == 0, spec[1] .. "\n" .. table.concat(errors, "\n"))
   assert(not next(scheduled), spec[1] .. ": leaked scheduled work")
   print("PASS: " .. spec[1])
 end
-print("Word Wise: " .. #tests .. " isolated checks passed")
+print("Word Sense: " .. #tests .. " isolated checks passed")

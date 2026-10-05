@@ -1,5 +1,5 @@
 -- Reflowable text from crengine, shared across eligible ebook formats.
-local Page = require("word_wise_page")
+local Page = require("word_sense_page")
 local Reflowable = {}
 Reflowable.__index = Reflowable
 
@@ -15,7 +15,7 @@ end
 
 function Reflowable:compare(a, b)
   local order = self.doc:compareXPointers(a, b)
-  if order == nil then error("Invalid Word Wise document position") end
+  if order == nil then error("Invalid Word Sense document position") end
   return -order -- KOReader uses +1 for a position BEFORE another position.
 end
 

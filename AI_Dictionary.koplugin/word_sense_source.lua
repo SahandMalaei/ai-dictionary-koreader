@@ -7,8 +7,8 @@ local FORMATS = {
   pdf = true, djvu = true, djv = true,
 }
 local ADAPTERS = {
-  require("word_wise_reflowable"),
-  require("word_wise_fixed"),
+  require("word_sense_reflowable"),
+  require("word_sense_fixed"),
 }
 
 function Source.new(ui)

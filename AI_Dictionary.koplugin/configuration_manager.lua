@@ -8,8 +8,8 @@ ConfigurationManager.CORE_CONFIGURATION_KEYS = {
   "voice_model",
   "voice_voice",
   "output_language",
-  "word_wise_level",
-  "word_wise_model",
+  "word_sense_level",
+  "word_sense_model",
   "images",
   "update_check",
   "debug_mode",
@@ -20,8 +20,8 @@ ConfigurationManager.CORE_CONFIGURATION_KEY_SET = {
   text_endpoint = true,
   text_model = true,
   output_language = true,
-  word_wise_level = true,
-  word_wise_model = true,
+  word_sense_level = true,
+  word_sense_model = true,
   voice_endpoint = true,
   voice_model = true,
   voice_voice = true,
@@ -48,8 +48,8 @@ ConfigurationManager.CONFIGURATION_LABELS = {
   text_endpoint = "Text endpoint URL",
   text_model = "Text model",
   output_language = "Output language",
-  word_wise_level = "Word Wise reading level",
-  word_wise_model = "Word Wise model",
+  word_sense_level = "Word Sense reading level",
+  word_sense_model = "Word Sense model",
   additional_parameters = "Additional parameters",
   voice_endpoint = "Voice endpoint URL",
   voice_model = "Voice model",
@@ -89,13 +89,13 @@ function ConfigurationManager.normalize(configuration)
   else
     configuration.output_language = configuration.output_language:match("^%s*(.-)%s*$")
   end
-  local level = configuration.word_wise_level
+  local level = configuration.word_sense_level
   if level ~= "Basic" and level ~= "Intermediate" and level ~= "Advanced" then
-    configuration.word_wise_level = "Intermediate"
+    configuration.word_sense_level = "Intermediate"
   end
-  local model = configuration.word_wise_model
-  configuration.word_wise_model = type(model) == "string" and model:match("^%s*(.-)%s*$") or ""
-  if configuration.word_wise_model:find("%c") then configuration.word_wise_model = "" end
+  local model = configuration.word_sense_model
+  configuration.word_sense_model = type(model) == "string" and model:match("^%s*(.-)%s*$") or ""
+  if configuration.word_sense_model:find("%c") then configuration.word_sense_model = "" end
   return configuration
 end
 
@@ -256,7 +256,7 @@ function ConfigurationManager.parse_lua_literal(input)
 end
 
 function ConfigurationManager.display_value(key, value)
-  if key == "word_wise_model" and (value == nil or value == "") then
+  if key == "word_sense_model" and (value == nil or value == "") then
     return "Use text model"
   end
   if value == nil then

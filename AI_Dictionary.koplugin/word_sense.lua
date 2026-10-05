@@ -1,85 +1,85 @@
 local Config = require("configuration_manager")
 local ErrorBoundary = require("error_boundary")
-local Cache = require("word_wise_cache")
-local Chunk = require("word_wise_chunk")
-local Source = require("word_wise_source")
-local Prompt = require("word_wise_prompt")
-local Requests = require("word_wise_requests")
+local Cache = require("word_sense_cache")
+local Chunk = require("word_sense_chunk")
+local Source = require("word_sense_source")
+local Prompt = require("word_sense_prompt")
+local Requests = require("word_sense_requests")
 local Screen = require("device").screen
 local UIManager = require("ui/uimanager")
-local View = require("word_wise_view")
+local View = require("word_sense_view")
 local logger = require("logger")
 local queryAI = require("ai_query")
 
-local WordWise = {}
-WordWise.__index = WordWise
-local MODULE = "ai_dictionary_word_wise"
+local WordSense = {}
+WordSense.__index = WordSense
+local MODULE = "ai_dictionary_word_sense"
 local PAGE_DELAY = 0.6
 local CACHE_SIZE = 16
 -- Complete chunks to prefetch after the visible text, in order.
 local LOOKAHEAD_CHUNKS = 2
 
-function WordWise.new(plugin)
+function WordSense.new(plugin)
   local source = Source.new(plugin.ui)
   if not source then return end
   local self = setmetatable({
     ui = plugin.ui, source = source, generation = 0, overlay = View.new(),
     cache = Cache.new(CACHE_SIZE, source),
     requests = Requests.new(5),
-  }, WordWise)
+  }, WordSense)
   self.module = {
-    paintTo = ErrorBoundary.wrap("paint Word Wise", function(_, bb, x, y) self:paint(bb, x, y) end),
+    paintTo = ErrorBoundary.wrap("paint Word Sense", function(_, bb, x, y) self:paint(bb, x, y) end),
   }
   self.ui.view:registerViewModule(MODULE, self.module)
   self:install_taps()
   return self
 end
 
-function WordWise:signature()
+function WordSense:signature()
   return self.source:signature(Screen:getWidth(), Screen:getHeight())
 end
 
-function WordWise:priority_page(chunk)
+function WordSense:priority_page(chunk)
   -- Distance belongs to the whole range, not its first paragraph's page.
   -- A long paragraph beginning far behind the viewport is still visible work.
   local current = self.source:current_page()
   return math.max(self.source:page(chunk.pos0), math.min(current, self.source:page(chunk.pos1)))
 end
 
-function WordWise:selecting()
+function WordSense:selecting()
   local highlight = self.ui.highlight
   return highlight and (highlight.hold_pos or highlight.selected_text or highlight.select_mode)
 end
 
-function WordWise:redraw()
+function WordSense:redraw()
   UIManager:setDirty(self.ui.dialog or self.ui, "ui")
 end
 
-function WordWise:stop_scan()
+function WordSense:stop_scan()
   self.generation = self.generation + 1
   if self.pending then UIManager:unschedule(self.pending); self.pending = nil end
 end
 
-function WordWise:cancel()
+function WordSense:cancel()
   self:stop_scan()
   self.requests:cancel_all()
 end
 
-function WordWise:schedule(delay, callback)
+function WordSense:schedule(delay, callback)
   if self.pending then UIManager:unschedule(self.pending) end
-  self.pending = ErrorBoundary.wrap("scan Word Wise passage", function()
+  self.pending = ErrorBoundary.wrap("scan Word Sense passage", function()
     self.pending = nil
     callback()
   end)
   UIManager:scheduleIn(delay, self.pending)
 end
 
-function WordWise:current(generation, signature)
+function WordSense:current(generation, signature)
   return not self.closed and not self.suspended and generation == self.generation
     and signature == self:signature()
 end
 
-function WordWise:refresh(force)
+function WordSense:refresh(force)
   if self.closed or self.suspended then return end
   local signature = self:signature()
   if not force and signature == self.page_signature then return end
@@ -87,10 +87,10 @@ function WordWise:refresh(force)
   self.overlay:clear()
   self.page_signature = signature
   local configuration = Config.load()
-  local model = configuration.word_wise_model ~= "" and configuration.word_wise_model
+  local model = configuration.word_sense_model ~= "" and configuration.word_sense_model
     or configuration.text_model or "gpt-5-nano"
   local scope = table.concat({
-    configuration.word_wise_level, configuration.output_language, model, configuration.text_endpoint or "",
+    configuration.word_sense_level, configuration.output_language, model, configuration.text_endpoint or "",
   }, "\n")
   if scope ~= self.scope then
     self.requests:cancel_all()
@@ -106,17 +106,17 @@ function WordWise:refresh(force)
   self:redraw()
 end
 
-function WordWise:settings_changed()
+function WordSense:settings_changed()
   -- Only changes affecting meanings invalidate results. Font changes and other
   -- unrelated settings simply rebuild the viewport and geometry.
   self:refresh(true)
 end
 
-function WordWise:layout_changed()
+function WordSense:layout_changed()
   self:refresh(true)
 end
 
-function WordWise:protected(chunk)
+function WordSense:protected(chunk)
   local protected = {}
   for id in pairs(self.nearby or {}) do protected[id] = true end
   if self.viewport then
@@ -130,12 +130,12 @@ function WordWise:protected(chunk)
   return protected
 end
 
-function WordWise:display()
+function WordSense:display()
   self.overlay.boxes = self.source:boxes(self.cache:entries(), Screen:getWidth(), Screen:getHeight())
   self:redraw()
 end
 
-function WordWise:coverage(word)
+function WordSense:coverage(word)
   local record = self.cache:find(word)
   if record then return record end
   for _, job in pairs(self.requests.jobs) do
@@ -146,7 +146,7 @@ function WordWise:coverage(word)
   end
 end
 
-function WordWise:next_word()
+function WordSense:next_word()
   local last
   self.nearby = {}
   for _, word in ipairs(self.viewport.words) do
@@ -174,7 +174,7 @@ function WordWise:next_word()
   end
 end
 
-function WordWise:extract(step, done)
+function WordSense:extract(step, done)
   local generation, signature = self.generation, self.page_signature
   local function advance()
     if not self:current(generation, signature) then return end
@@ -184,7 +184,7 @@ function WordWise:extract(step, done)
     local ok, finished, err = pcall(step)
     if not ok or err then
       self.scan_failed = true
-      logger.warn("AI Dictionary Word Wise extraction: " .. tostring(err or finished))
+      logger.warn("AI Dictionary Word Sense extraction: " .. tostring(err or finished))
       return
     end
     if finished then done() else self:schedule(0.01, advance) end
@@ -192,7 +192,7 @@ function WordWise:extract(step, done)
   advance()
 end
 
-function WordWise:scan()
+function WordSense:scan()
   if self.closed or self.suspended or self.scan_failed then return end
   if self.page_signature ~= self:signature() then self:refresh(); return end
   if self:selecting() then self:schedule(0.3, function() self:scan() end); return end
@@ -208,7 +208,7 @@ function WordWise:scan()
   local ok, word = pcall(self.next_word, self)
   if not ok then
     self.scan_failed = true
-    logger.warn("AI Dictionary Word Wise navigation: " .. tostring(word))
+    logger.warn("AI Dictionary Word Sense navigation: " .. tostring(word))
     return
   end
   if not word then return end
@@ -218,13 +218,13 @@ function WordWise:scan()
   end)
 end
 
-function WordWise:wake()
+function WordSense:wake()
   if not self.closed and not self.suspended and not self.pending then
     self:schedule(0, function() self:scan() end)
   end
 end
 
-function WordWise:finished(job, chunk, response)
+function WordSense:finished(job, chunk, response)
   if not self.requests:remove(job) then return end
   -- Recheck the viewport before displaying anything; a page event may be pending.
   self:refresh()
@@ -238,28 +238,28 @@ function WordWise:finished(job, chunk, response)
     -- Only failures suppress a retry for this visit. Successful coverage is
     -- always determined by stored ranges, so eviction cannot create scan gaps.
     self.failed[#self.failed + 1] = { id = chunk.id, pos0 = chunk.pos0, pos1 = chunk.pos1 }
-    logger.warn("AI Dictionary Word Wise: " .. (err or "passage request failed."))
+    logger.warn("AI Dictionary Word Sense: " .. (err or "passage request failed."))
   end
   self:wake()
 end
 
-function WordWise:request(chunk)
+function WordSense:request(chunk)
   local configuration = self.configuration
   local messages = Prompt.messages(chunk, chunk.context,
-    configuration.word_wise_level, configuration.output_language)
+    configuration.word_sense_level, configuration.output_language)
   local key = self.scope .. "\n" .. chunk.id
   local job = self.requests:reserve(key, self:priority_page(chunk), self.source:current_page())
   if not job then return end -- Retry when a nearer request finishes and frees a slot.
   job.scope, job.chunk = self.scope, chunk
   local ok, cancel = pcall(queryAI, messages, {
-    model = configuration.word_wise_model,
+    model = configuration.word_sense_model,
     reasoning_effort = "low",
     provider_sort = "price",
     -- Keep compatibility with providers that do not support JSON response mode.
-    on_done = ErrorBoundary.wrap("receive Word Wise definitions", function(response)
+    on_done = ErrorBoundary.wrap("receive Word Sense definitions", function(response)
       self:finished(job, chunk, response)
     end),
-    on_error = ErrorBoundary.wrap("Word Wise request error", function()
+    on_error = ErrorBoundary.wrap("Word Sense request error", function()
       self:finished(job, chunk)
     end),
   })
@@ -271,14 +271,14 @@ function WordWise:request(chunk)
   end
 end
 
-function WordWise:paint(bb, x, y)
+function WordSense:paint(bb, x, y)
   if self.closed or self.suspended then return end
   -- Also catches layout changes and position changes without a reader event.
   self:refresh()
   if not self:selecting() then self.overlay:paint(bb, x, y) end
 end
 
-function WordWise:tap(ges)
+function WordSense:tap(ges)
   if self.closed or self.suspended or not ges or not ges.pos or self:selecting() then return end
   if self.page_signature ~= self:signature() then self:refresh(); return end
   local had_popup = self.overlay.popup ~= nil
@@ -288,11 +288,11 @@ function WordWise:tap(ges)
   return handled
 end
 
-function WordWise:close_popup()
+function WordSense:close_popup()
   if self.overlay:close_popup() then self:redraw() end
 end
 
-function WordWise:register_popup_taps()
+function WordSense:register_popup_taps()
   if type(self.ui.registerTouchZones) ~= "function" then return end
   local id = MODULE .. "_popup_tap"
   local overrides = {}
@@ -307,47 +307,47 @@ function WordWise:register_popup_taps()
     id = id, ges = "tap",
     screen_zone = { ratio_x = 0, ratio_y = 0, ratio_w = 1, ratio_h = 1 },
     overrides = overrides,
-    handler = ErrorBoundary.wrap("tap Word Wise bubble", function(ges)
+    handler = ErrorBoundary.wrap("tap Word Sense bubble", function(ges)
       if self.overlay.popup then return self:tap(ges) end
     end),
   } }
   self.ui:registerTouchZones(self.popup_touch_zones)
 end
 
-function WordWise:install_taps()
+function WordSense:install_taps()
   local highlight = self.ui.highlight
   if not highlight then return end
   self.original_tap, self.original_hold = highlight.onTap, highlight.onHold
   self.tap_wrapper = function(widget, arg, ges)
-    if self.overlay.popup and ErrorBoundary.call("tap Word Wise bubble", self.tap, self, ges) then
+    if self.overlay.popup and ErrorBoundary.call("tap Word Sense bubble", self.tap, self, ges) then
       return true
     end
     -- Saved highlights and selection gestures retain their normal priority.
     local result
     if self.original_tap then result = self.original_tap(widget, arg, ges) end
     if result then return result end
-    return ErrorBoundary.call("tap Word Wise", self.tap, self, ges)
+    return ErrorBoundary.call("tap Word Sense", self.tap, self, ges)
   end
   self.hold_wrapper = function(widget, ...)
-    ErrorBoundary.call("dismiss Word Wise on hold", self.close_popup, self)
+    ErrorBoundary.call("dismiss Word Sense on hold", self.close_popup, self)
     if self.original_hold then return self.original_hold(widget, ...) end
   end
   highlight.onTap, highlight.onHold = self.tap_wrapper, self.hold_wrapper
 end
 
-function WordWise:suspend()
+function WordSense:suspend()
   self.suspended = true
   self:cancel()
   self.overlay:clear()
   self:redraw()
 end
 
-function WordWise:resume()
+function WordSense:resume()
   self.suspended = false
   self:refresh(true)
 end
 
-function WordWise:close()
+function WordSense:close()
   if self.closed then return end
   self.closed = true
   self:cancel()
@@ -367,4 +367,4 @@ function WordWise:close()
   end
 end
 
-return WordWise
+return WordSense

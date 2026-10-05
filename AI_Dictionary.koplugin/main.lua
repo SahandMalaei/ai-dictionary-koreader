@@ -63,8 +63,8 @@ end
 
 function Benedict:saveConfiguration(configuration)
   local saved = ErrorBoundary.call("save configuration", SettingsMenu.save_configuration, self, configuration)
-  if saved and self.word_wise then
-    ErrorBoundary.call("update Word Wise settings", self.word_wise.settings_changed, self.word_wise)
+  if saved and self.word_sense then
+    ErrorBoundary.call("update Word Sense settings", self.word_sense.settings_changed, self.word_sense)
   end
   return saved
 end
@@ -134,45 +134,45 @@ function Benedict:init()
 end
 
 function Benedict:onReaderReady()
-  ErrorBoundary.call("start Word Wise", function()
-    if self.word_wise then self.word_wise:close() end
-    self.word_wise = require("word_wise").new(self)
-    if self.word_wise then self.word_wise:refresh() end
+  ErrorBoundary.call("start Word Sense", function()
+    if self.word_sense then self.word_sense:close() end
+    self.word_sense = require("word_sense").new(self)
+    if self.word_sense then self.word_sense:refresh() end
   end)
 end
 
 function Benedict:onPageUpdate()
-  if self.word_wise then
-    ErrorBoundary.call("update Word Wise page", self.word_wise.refresh, self.word_wise)
+  if self.word_sense then
+    ErrorBoundary.call("update Word Sense page", self.word_sense.refresh, self.word_sense)
   end
 end
 
 Benedict.onPosUpdate = Benedict.onPageUpdate
 
 function Benedict:onDocumentRerendered()
-  if self.word_wise then
-    ErrorBoundary.call("refresh Word Wise layout", self.word_wise.layout_changed, self.word_wise)
+  if self.word_sense then
+    ErrorBoundary.call("refresh Word Sense layout", self.word_sense.layout_changed, self.word_sense)
   end
 end
 
 Benedict.onSetDimensions = Benedict.onDocumentRerendered
 
 function Benedict:onSuspend()
-  if self.word_wise then
-    ErrorBoundary.call("suspend Word Wise", self.word_wise.suspend, self.word_wise)
+  if self.word_sense then
+    ErrorBoundary.call("suspend Word Sense", self.word_sense.suspend, self.word_sense)
   end
 end
 
 function Benedict:onResume()
-  if self.word_wise then
-    ErrorBoundary.call("resume Word Wise", self.word_wise.resume, self.word_wise)
+  if self.word_sense then
+    ErrorBoundary.call("resume Word Sense", self.word_sense.resume, self.word_sense)
   end
 end
 
 function Benedict:onCloseDocument()
-  if self.word_wise then
-    ErrorBoundary.call("close Word Wise", self.word_wise.close, self.word_wise)
-    self.word_wise = nil
+  if self.word_sense then
+    ErrorBoundary.call("close Word Sense", self.word_sense.close, self.word_sense)
+    self.word_sense = nil
   end
 end
 

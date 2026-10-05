@@ -11,7 +11,7 @@ function Requests:remove(job, cancel)
   if self.jobs[job.key] ~= job then return false end
   -- Remove first: cancelling a transport may synchronously invoke its callback.
   self.jobs[job.key] = nil
-  if cancel and job.cancel then ErrorBoundary.call("cancel Word Wise request", job.cancel) end
+  if cancel and job.cancel then ErrorBoundary.call("cancel Word Sense request", job.cancel) end
   job.cancel = nil
   return true
 end
@@ -41,7 +41,7 @@ function Requests:cancel_all()
   local jobs = self.jobs
   self.jobs = {}
   for _, job in pairs(jobs) do
-    if job.cancel then ErrorBoundary.call("cancel Word Wise request", job.cancel) end
+    if job.cancel then ErrorBoundary.call("cancel Word Sense request", job.cancel) end
     job.cancel = nil
   end
 end
