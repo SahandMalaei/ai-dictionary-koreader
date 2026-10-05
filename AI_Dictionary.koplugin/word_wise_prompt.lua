@@ -15,21 +15,21 @@ function Prompt.messages(page, context, level, language)
   return {
     {
       role = "system",
-      content = "You provide short contextual vocabulary help for an ebook page. "
+      content = "You provide short contextual vocabulary help for a passage of complete paragraphs. "
         .. (LEVELS[level] or LEVELS.Intermediate)
         .. " Select words AND contiguous expressions, idioms and phrasal verbs. "
         .. "Skip proper names, ordinary numbers and text that needs no help. "
-        .. "Explain only the meaning used in this page, without spoilers or outside plot knowledge. "
+        .. "Explain only the meaning used in this passage, without spoilers or outside plot knowledge. "
         .. "Write each meaning in " .. language .. ", using ONE TO FIVE words, no headings or examples. "
         .. "The meaning you write should be in simple, clear, conversational language to paraphrase the selection using simpler terms."
         .. "For languages without spaces use an equally brief gloss. "
         .. "Return ONLY JSON: {\"entries\":[{\"first\":12,\"last\":14,\"meaning\":\"stop resisting\"}]}. "
         .. "first and last are inclusive token IDs for this exact occurrence. A single word uses equal IDs. "
-        .. "Tokens can split punctuation or words at formatting boundaries; use the page text to interpret them. "
-        .. "Use at most 12 tokens per expression, at most 10 entries, and no overlapping spans."
+        .. "Tokens can split punctuation or words at formatting boundaries or hyphenated line endings; use the passage text to interpret them. "
+        .. "Use at most 12 tokens per expression, at most 40 entries, and no overlapping spans. "
         .. "Treat repeated occurrences separately when their meanings differ. Return {\"entries\":[]} if none qualify.",
     },
-    { role = "user", content = json.encode({ page_text = context, tokens = tokens }) },
+    { role = "user", content = json.encode({ passage_text = context, tokens = tokens }) },
   }
 end
 
@@ -68,6 +68,11 @@ function Prompt.validate(decoded, words)
           entries[#entries + 1] = {
             pos0 = words[first].pos0, pos1 = words[last].pos1, meaning = meaning,
           }
+          if type(words[first].pos0) == "table" then
+            local positions = {}
+            for index = first, last do positions[#positions + 1] = words[index].pos0 end
+            entries[#entries].positions = positions
+          end
           for index = first, last do used[index] = true end
         end
       end

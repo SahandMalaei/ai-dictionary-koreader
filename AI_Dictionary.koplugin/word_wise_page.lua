@@ -1,8 +1,8 @@
 -- Read EPUB text without navigating the document, in small batches. Keeping
 -- xpointers for each token avoids ambiguous string searches for repeated words.
 local Page = {}
-local MAX_WORDS = 1200
-local MAX_TEXT_BYTES = 24000
+local MAX_WORDS = 50000
+local MAX_TEXT_BYTES = 2 * 1024 * 1024
 
 function Page.supported(ui)
   local doc = ui and ui.document
@@ -71,8 +71,10 @@ end
 
 function Page.step(doc, page, batch_size)
   for _ = 1, batch_size or 24 do
-    if not page.cursor or page.cursor == "" or page.steps >= MAX_WORDS
-        or page.bytes >= MAX_TEXT_BYTES then return true end
+    if not page.cursor or page.cursor == "" then return true end
+    if page.steps >= MAX_WORDS or page.bytes >= MAX_TEXT_BYTES then
+      return true, "Visible text exceeds the safe extraction limit."
+    end
     local ending = doc:getNextVisibleWordEnd(page.cursor)
     if not ending or ending == page.cursor then return true end
     local start = doc:getPrevVisibleWordStart(ending)

@@ -1,6 +1,9 @@
 local Config = require("configuration_manager")
 local ErrorBoundary = require("error_boundary")
-local Page = require("word_wise_page")
+local Cache = require("word_wise_cache")
+local Chunk = require("word_wise_chunk")
+local EPUB = require("word_wise_epub")
+local PDF = require("word_wise_pdf")
 local Prompt = require("word_wise_prompt")
 local Requests = require("word_wise_requests")
 local Screen = require("device").screen
@@ -14,13 +17,16 @@ WordWise.__index = WordWise
 local MODULE = "ai_dictionary_word_wise"
 local PAGE_DELAY = 0.6
 local CACHE_SIZE = 16
--- Number of pages to prefetch after the current page, in order. Set to 0 for none.
-local LOOKAHEAD_PAGES = 2
+-- Complete chunks to prefetch after the visible text, in order.
+local LOOKAHEAD_CHUNKS = 2
 
 function WordWise.new(plugin)
-  if not Page.supported(plugin.ui) then return end
+  local adapter = EPUB.supported(plugin.ui) and EPUB or PDF.supported(plugin.ui) and PDF
+  if not adapter then return end
+  local source = adapter.new(plugin.ui)
   local self = setmetatable({
-    ui = plugin.ui, generation = 0, cache = {}, cache_order = {}, overlay = View.new(),
+    ui = plugin.ui, source = source, generation = 0, overlay = View.new(),
+    cache = Cache.new(CACHE_SIZE, source),
     requests = Requests.new(5),
   }, WordWise)
   self.module = {
@@ -32,7 +38,14 @@ function WordWise.new(plugin)
 end
 
 function WordWise:signature()
-  return Page.signature(self.ui, Screen:getWidth(), Screen:getHeight())
+  return self.source:signature(Screen:getWidth(), Screen:getHeight())
+end
+
+function WordWise:priority_page(chunk)
+  -- Distance belongs to the whole range, not its first paragraph's page.
+  -- A long paragraph beginning far behind the viewport is still visible work.
+  local current = self.source:current_page()
+  return math.max(self.source:page(chunk.pos0), math.min(current, self.source:page(chunk.pos1)))
 end
 
 function WordWise:selecting()
@@ -56,7 +69,7 @@ end
 
 function WordWise:schedule(delay, callback)
   if self.pending then UIManager:unschedule(self.pending) end
-  self.pending = ErrorBoundary.wrap("scan Word Wise page", function()
+  self.pending = ErrorBoundary.wrap("scan Word Wise passage", function()
     self.pending = nil
     callback()
   end)
@@ -79,93 +92,132 @@ function WordWise:refresh(force)
   local model = configuration.word_wise_model ~= "" and configuration.word_wise_model
     or configuration.text_model or "gpt-5-nano"
   local scope = table.concat({
-    Page.layout_signature(self.ui, Screen:getWidth(), Screen:getHeight()),
-    configuration.word_wise_level, configuration.output_language, model,
+    configuration.word_wise_level, configuration.output_language, model, configuration.text_endpoint or "",
   }, "\n")
   if scope ~= self.scope then
     self.requests:cancel_all()
-    self.cache, self.cache_order = {}, {}
+    self.cache = Cache.new(CACHE_SIZE, self.source)
   end
   self.scope, self.configuration = scope, configuration
-  self.target = Page.target(self.ui)
-  self.current_key = self:key(self.target)
-  self.attempted = {}
-  local cached = self.cache[self.current_key]
-  if cached then
-    self.attempted[self.current_key] = true
-    self:display(cached)
+  self.viewport, self.failed, self.scan_failed, self.nearby = nil, {}, nil, {}
+  for _, job in pairs(self.requests.jobs) do
+    job.page = self:priority_page(job.chunk)
   end
-  self:schedule(cached and 0 or PAGE_DELAY, function() self:scan() end)
+  self:display()
+  self:schedule(#self.overlay.boxes > 0 and 0 or PAGE_DELAY, function() self:scan() end)
   self:redraw()
 end
 
 function WordWise:settings_changed()
-  self:cancel()
-  self.cache, self.cache_order, self.scope = {}, {}, nil
+  -- Only changes affecting meanings invalidate results. Font changes and other
+  -- unrelated settings simply rebuild the viewport and geometry.
   self:refresh(true)
 end
 
-function WordWise:key(target)
-  return self.scope .. "\n" .. target.id
+function WordWise:layout_changed()
+  self:refresh(true)
 end
 
-function WordWise:remember(key, entries)
-  if not self.cache[key] then
-    self.cache_order[#self.cache_order + 1] = key
-    if #self.cache_order > CACHE_SIZE then
-      self.cache[table.remove(self.cache_order, 1)] = nil
+function WordWise:protected(chunk)
+  local protected = {}
+  for id in pairs(self.nearby or {}) do protected[id] = true end
+  if self.viewport then
+    for _, word in ipairs(self.viewport.words) do
+      for _, id in ipairs(self.cache.order) do
+        if self.cache:covers(self.cache.records[id], word) then protected[id] = true end
+      end
+      if chunk and self.cache:covers(chunk, word) then protected[chunk.id] = true end
     end
   end
-  self.cache[key] = entries
+  return protected
 end
 
-function WordWise:display(entries)
-  self.overlay.boxes = Page.boxes(self.ui.document, entries, Screen:getWidth(), Screen:getHeight())
+function WordWise:display()
+  self.overlay.boxes = self.source:boxes(self.cache:entries(), Screen:getWidth(), Screen:getHeight())
   self:redraw()
 end
 
-function WordWise:next_target()
-  local target = self.target
-  for offset = 0, LOOKAHEAD_PAGES do
-    if not target then return end
-    local key = self:key(target)
-    -- Wait for each nearer page to finish before starting the following page.
-    if self.requests.jobs[key] then return end
-    if not self.cache[key] and not self.attempted[key] then return target, key end
-    if offset < LOOKAHEAD_PAGES then target = Page.following(self.ui, target) end
+function WordWise:coverage(word)
+  local record = self.cache:find(word)
+  if record then return record end
+  for _, job in pairs(self.requests.jobs) do
+    if self.cache:covers(job.chunk, word) then return job.chunk, "active" end
+  end
+  for _, chunk in ipairs(self.failed) do
+    if self.cache:covers(chunk, word) then return chunk end
   end
 end
 
+function WordWise:next_word()
+  local last
+  self.nearby = {}
+  for _, word in ipairs(self.viewport.words) do
+    local record, status = self:coverage(word)
+    if not record then return word end
+    if status == "active" then return end
+    if not last or self.source:compare(last.pos1, record.pos1) < 0 then last = record end
+  end
+  if not last then return end
+  for _ = 1, LOOKAHEAD_CHUNKS do
+    local word = self.source:after(last.pos1)
+    if not word then return end
+    local record, status = self:coverage(word)
+    if not record then
+      -- When an unusually dense viewport already occupies the entire cache,
+      -- stop speculative work instead of repeatedly querying rejected entries.
+      local count = 0
+      for _ in pairs(self:protected()) do count = count + 1 end
+      if count >= self.cache.limit then return end
+      return word
+    end
+    self.nearby[record.id] = true
+    if status == "active" then return end
+    last = record
+  end
+end
+
+function WordWise:extract(step, done)
+  local generation, signature = self.generation, self.page_signature
+  local function advance()
+    if not self:current(generation, signature) then return end
+    -- Extracting EPUB text clears the engine's selection. Pause before every
+    -- batch while KOReader owns a live selection.
+    if self:selecting() then self:schedule(0.3, advance); return end
+    local ok, finished, err = pcall(step)
+    if not ok or err then
+      self.scan_failed = true
+      logger.warn("AI Dictionary Word Wise extraction: " .. tostring(err or finished))
+      return
+    end
+    if finished then done() else self:schedule(0.01, advance) end
+  end
+  advance()
+end
+
 function WordWise:scan()
-  if self.closed or self.suspended then return end
+  if self.closed or self.suspended or self.scan_failed then return end
   if self.page_signature ~= self:signature() then self:refresh(); return end
-  -- Text extraction clears crengine's temporary selection. Never run it while
-  -- KOReader owns an active selection, including between scan batches.
-  if self:selecting() then
-    self:schedule(0.3, function() self:scan() end)
+  if self:selecting() then self:schedule(0.3, function() self:scan() end); return end
+  if not self.viewport then
+    local viewport = self.source:viewport()
+    self:extract(function() return self.source:step_viewport(viewport) end, function()
+      self.viewport = viewport
+      self:display()
+      self:wake()
+    end)
     return
   end
-  local target, key = self:next_target()
-  if not target then return end
-  local generation, signature = self.generation, self.page_signature
-  local page = Page.new(self.ui, target)
-  local function step()
-    if not self:current(generation, signature) then return end
-    if self:selecting() then self:schedule(0.3, step); return end
-    if not Page.step(self.ui.document, page) then
-      self:schedule(0.01, step)
-      return
-    end
-    if #page.words == 0 then
-      self.attempted[key] = true
-      self:remember(key, {})
-      self:wake()
-      return
-    end
-    local context = Page.context(self.ui.document, page)
-    self:request(page, context, key)
+  local ok, word = pcall(self.next_word, self)
+  if not ok then
+    self.scan_failed = true
+    logger.warn("AI Dictionary Word Wise navigation: " .. tostring(word))
+    return
   end
-  step()
+  if not word then return end
+  local chunk = Chunk.new(self.source, word)
+  self:extract(function() return Chunk.step(chunk) end, function()
+    if chunk.id then self:request(chunk) end
+  end)
 end
 
 function WordWise:wake()
@@ -174,51 +226,47 @@ function WordWise:wake()
   end
 end
 
-function WordWise:finished(job, page, response)
+function WordWise:finished(job, chunk, response)
   if not self.requests:remove(job) then return end
   -- Recheck the viewport before displaying anything; a page event may be pending.
   self:refresh()
   if self.closed or self.suspended or job.scope ~= self.scope then return end
   local entries, err
-  if response ~= nil then entries, err = Prompt.parse(response, page.words) end
+  if response ~= nil then entries, err = Prompt.parse(response, chunk.words) end
   if entries then
-    self:remember(job.key, entries)
-    if job.key == self.current_key then self:display(entries) end
+    self.cache:put(chunk, entries, self:protected(chunk))
+    self:display()
   else
-    -- Failed pages can retry on a later visit, without an automatic retry loop.
-    logger.warn("AI Dictionary Word Wise: " .. (err or "page request failed."))
-  end
-  self.attempted[job.key] = true
-  if job.key == self.current_key then
-    -- A prefetch may finish just after the reader turns into that page. Replace
-    -- its pending settle timer so the following page can start immediately.
-    self:stop_scan()
+    -- Only failures suppress a retry for this visit. Successful coverage is
+    -- always determined by stored ranges, so eviction cannot create scan gaps.
+    self.failed[#self.failed + 1] = { id = chunk.id, pos0 = chunk.pos0, pos1 = chunk.pos1 }
+    logger.warn("AI Dictionary Word Wise: " .. (err or "passage request failed."))
   end
   self:wake()
 end
 
-function WordWise:request(page, context, key)
+function WordWise:request(chunk)
   local configuration = self.configuration
-  local messages = Prompt.messages(page, context,
+  local messages = Prompt.messages(chunk, chunk.context,
     configuration.word_wise_level, configuration.output_language)
-  local job = self.requests:reserve(key, page.target.number, self.target.number)
+  local key = self.scope .. "\n" .. chunk.id
+  local job = self.requests:reserve(key, self:priority_page(chunk), self.source:current_page())
   if not job then return end -- Retry when a nearer request finishes and frees a slot.
-  job.scope = self.scope
-  self.attempted[key] = true
+  job.scope, job.chunk = self.scope, chunk
   local ok, cancel = pcall(queryAI, messages, {
     model = configuration.word_wise_model,
     reasoning_effort = "low",
     provider_sort = "price",
     -- Keep compatibility with providers that do not support JSON response mode.
     on_done = ErrorBoundary.wrap("receive Word Wise definitions", function(response)
-      self:finished(job, page, response)
+      self:finished(job, chunk, response)
     end),
     on_error = ErrorBoundary.wrap("Word Wise request error", function()
-      self:finished(job, page)
+      self:finished(job, chunk)
     end),
   })
   if not ok then
-    self:finished(job, page)
+    self:finished(job, chunk)
   elseif self.requests.jobs[key] == job and type(cancel) == "function" then
     -- Some callbacks are synchronous; do not retain a finished worker.
     job.cancel = cancel
@@ -306,7 +354,7 @@ function WordWise:close()
   self.closed = true
   self:cancel()
   self.overlay:clear()
-  self.cache, self.cache_order = {}, {}
+  self.cache = Cache.new(CACHE_SIZE, self.source)
   if self.popup_touch_zones and type(self.ui.unRegisterTouchZones) == "function" then
     self.ui:unRegisterTouchZones(self.popup_touch_zones)
     self.popup_touch_zones = nil

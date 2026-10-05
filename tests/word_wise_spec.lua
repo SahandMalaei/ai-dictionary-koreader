@@ -10,6 +10,7 @@ function screen:getWidth() return self.width end
 function screen:getHeight() return self.height end
 function screen:scaleBySize(n) return n * (self.scale or 1) end
 package.loaded.device = { screen = screen }
+package.loaded["ui/geometry"] = { new = function(_, value) return value or {} end }
 package.loaded.logger = {
   err = function(err) errors[#errors + 1] = err end,
   warn = function(err) warnings[#warnings + 1] = err end,
@@ -53,6 +54,10 @@ package.loaded.ai_query = function(messages, callbacks)
   requests[#requests + 1] = request
   if requests.start_error then error("could not start request") end
   if requests.synchronous_error then callbacks.on_error("offline") end
+  if requests.synchronous_success then
+    decoded.response = { entries = { { first = 1, last = 1, meaning = "simple meaning" } } }
+    callbacks.on_done("response")
+  end
   return function()
     request.cancels = request.cancels + 1
     -- Some transports can still dispatch callbacks when being cancelled.
@@ -67,13 +72,18 @@ local Page = require("word_wise_page")
 local Prompt = require("word_wise_prompt")
 local View = require("word_wise_view")
 local WordWise = require("word_wise")
+local Chunk = require("word_wise_chunk")
+local EPUB = require("word_wise_epub")
+local PDF = require("word_wise_pdf")
+local Cache = require("word_wise_cache")
 
 local function pointer(index, ending) return tostring(index) .. (ending and "e" or "s") end
 local function index_of(xp) return tonumber(xp:match("^(%d+)")) end
 local function document(pages)
-  local doc = { file = "book.EPUB", page = 1, hash = 1, texts = {}, ranges = {}, reads = 0 }
+  local doc = { file = "book.EPUB", page = 1, hash = 1, texts = {}, ranges = {}, reads = 0, breaks = {} }
   for i, words in ipairs(pages) do
     doc.ranges[i] = { first = #doc.texts + 1 }
+    doc.breaks[#doc.texts + 1] = true
     for _, word in ipairs(words) do doc.texts[#doc.texts + 1] = word end
     doc.ranges[i].last = #doc.texts
   end
@@ -97,6 +107,15 @@ local function document(pages)
     if index <= #self.texts then return pointer(index, true) end
   end
   function doc:getPrevVisibleWordStart(xp) return pointer(index_of(xp)) end
+  function doc:getPrevVisibleWordEnd(xp)
+    local index = index_of(xp) - 1
+    if index >= 1 then return pointer(index, true) end
+  end
+  function doc:compareXPointers(a, b)
+    local av = index_of(a) * 2 + (a:sub(-1) == "e" and 1 or 0)
+    local bv = index_of(b) * 2 + (b:sub(-1) == "e" and 1 or 0)
+    return av < bv and 1 or av > bv and -1 or 0
+  end
   function doc:isXPointerInCurrentPage(xp)
     local index, range = index_of(xp), self.ranges[self.page]
     return index >= range.first and index <= range.last
@@ -105,14 +124,20 @@ local function document(pages)
     assert(not self.selection_active, "extraction must never clear a live selection")
     self.reads = self.reads + 1
     local text = {}
-    for i = index_of(a), index_of(b) do text[#text + 1] = self.texts[i] end
-    return table.concat(text, " ")
+    for i = index_of(a), index_of(b) do
+      if #text > 0 then text[#text + 1] = self.breaks[i] and "\n" or (self.joiners and self.joiners[i] or " ") end
+      text[#text + 1] = self.texts[i]
+    end
+    return table.concat(text)
   end
   function doc:getScreenBoxesFromPositions(a, b)
     self.last_boxes = { a, b }
     if self.box_error then error("bad geometry") end
     if self.boxes then return self.boxes end
-    return { { x = index_of(a) * 10, y = 100, w = (index_of(b) - index_of(a) + 1) * 20, h = 20 } }
+    local range = self.ranges[self.page]
+    local offset = math.max(0, index_of(a) - range.first)
+    return { { x = (offset % 50 + 1) * 10, y = 100 + math.floor(offset / 50) * 24,
+      w = (index_of(b) - index_of(a) + 1) * 20, h = 20 } }
   end
   return doc
 end
@@ -244,36 +269,6 @@ test("Word Wise model setting is optional, editable and saved as a string", func
   assert(edited and edited.key == "word_wise_model" and edited.literal == false)
 end)
 
-test("Word Wise model changes retain reasoning and invalidate page results", function()
-  configuration.text_model = "google/gemini-2.5-flash"
-  configuration.word_wise_model = "deepseek/deepseek-v4.1-flash"
-  local controller, ui = start(); drain()
-  assert(requests[1].callbacks.model == configuration.word_wise_model)
-  assert(requests[1].callbacks.reasoning_effort == "low")
-  assert(requests[1].callbacks.provider_sort == "price")
-  complete(requests[1])
-
-  configuration.word_wise_model = "another-model"
-  controller:settings_changed(); drain()
-  assert(#requests == 2 and #controller.overlay.boxes == 0)
-  assert(requests[2].callbacks.model == "another-model" and requests[2].callbacks.reasoning_effort == "low")
-  configuration.word_wise_model = ""
-  controller:settings_changed()
-  assert(requests[2].cancels == 1)
-  complete(requests[2]); assert(#controller.overlay.boxes == 0)
-  drain()
-  assert(requests[3].callbacks.model == "" and requests[3].callbacks.reasoning_effort == "low")
-  assert(configuration.text_model == "google/gemini-2.5-flash")
-  complete(requests[3])
-
-  -- Direct configuration-file edits also keep results from different models apart.
-  ui.document.page = 2; controller:refresh(); drain(); complete(requests[4])
-  configuration.word_wise_model = "a-new-model"
-  ui.document.page = 1; controller:refresh(); drain()
-  assert(#requests == 5 and requests[5].callbacks.model == "a-new-model")
-  controller:close()
-end)
-
 test("visible extraction keeps first and last words and exact occurrences", function()
   local doc = document({ { "bear", "give", "way", "bear" }, { "unseen" } })
   local page = Page.new(make_ui(doc))
@@ -314,83 +309,6 @@ test("parser validates definitions, phrase spans, overlap and repeated words", f
   assert(encoded.tokens[4].id == 4 and encoded.tokens[4].text == "bear")
 end)
 
-test("page turns debounce scans, retain active requests and cache offscreen results", function()
-  local controller, ui = start()
-  ui.document.page = 2; controller:refresh()
-  assert(#requests == 0)
-  drain(); assert(#requests == 1 and requests[1].page.tokens[1].text == "rare")
-  local old = requests[1]
-  ui.document.page = 1; controller:refresh()
-  assert(old.cancels == 0 and #controller.overlay.boxes == 0)
-  drain(); assert(#requests == 2)
-  complete(old); assert(#controller.overlay.boxes == 0)
-  complete(requests[2]); assert(#controller.overlay.boxes == 1)
-  assert(not next(controller.requests.jobs))
-  controller:refresh(); drain(); assert(#requests == 2)
-  ui.document.page = 2; controller:refresh(); drain()
-  assert(#requests == 2 and #controller.overlay.boxes == 1, "offscreen results must be cached")
-  ui.document.page = 1; controller:refresh(); drain()
-  assert(#requests == 2 and #controller.overlay.boxes == 1, "completed page should use memory cache")
-  controller:close()
-end)
-
-test("prefetch queries pages sequentially and stops two pages ahead", function()
-  local controller, ui = start(many_pages(5)); drain()
-  assert(#requests == 1 and requests[1].page.tokens[1].text == "page1")
-  complete(requests[1]); drain()
-  assert(#requests == 2 and requests[2].page.tokens[1].text == "page2")
-  assert(ui.document.page == 1 and requests[2].callbacks.reasoning_effort == "low")
-  assert(requests[2].callbacks.provider_sort == "price")
-  assert(#controller.overlay.boxes == 1 and controller.overlay.boxes[1].entry.pos0 == "1s")
-  complete(requests[2]); drain()
-  assert(#requests == 3 and requests[3].page.tokens[1].text == "page3")
-  assert(active_count(controller) == 1 and ui.document.page == 1)
-  complete(requests[3]); drain()
-  assert(#requests == 3 and active_count(controller) == 0, "stop after two pages of lookahead")
-  assert(controller.overlay.boxes[1].entry.pos0 == "1s", "prefetch must not paint offscreen entries")
-  ui.document.page = 2; controller:refresh()
-  assert(controller.overlay.boxes[1].entry.pos0 == "2s", "prefetched results display immediately")
-  drain(); assert(#requests == 4 and requests[4].page.tokens[1].text == "page4")
-  turn(controller, ui, 3)
-  assert(#requests == 4, "wait for the nearer active page before requesting page5")
-  -- Turning into an active prefetch attaches to it instead of making a duplicate.
-  turn(controller, ui, 4)
-  assert(#requests == 4 and requests[4].cancels == 0)
-  complete(requests[4]); drain()
-  assert(#requests == 5 and requests[5].page.tokens[1].text == "page5")
-  assert(controller.overlay.boxes[1].entry.pos0 == "4s")
-  turn(controller, ui, 5); complete(requests[5]); drain()
-  assert(#requests == 5 and active_count(controller) == 0, "stop at end of book")
-  controller:close()
-end)
-
-test("five active requests are retained and the farthest is replaced after navigation", function()
-  local controller, ui = start(many_pages(12)); drain()
-  for page = 2, 5 do
-    turn(controller, ui, page)
-    assert(active_count(controller) == page)
-  end
-  for _, request in ipairs(requests) do assert(request.cancels == 0) end
-  local evicted = requests[1]
-  evicted.on_cancel = function() complete(evicted) end
-  turn(controller, ui, 6)
-  assert(#requests == 6 and active_count(controller) == 5 and evicted.cancels == 1)
-  complete(evicted); assert(#controller.overlay.boxes == 0)
-  for i = 2, 6 do assert(requests[i].cancels == 0) end
-  -- The farthest is recalculated from the new reading position, not request age.
-  turn(controller, ui, 1)
-  assert(#requests == 7 and requests[6].cancels == 1 and active_count(controller) == 5)
-  complete(requests[6]); assert(#controller.overlay.boxes == 0)
-  assert(requests[7].page.tokens[1].text == "page1")
-  complete(requests[2]); drain()
-  assert(#controller.overlay.boxes == 0 and active_count(controller) == 4)
-  turn(controller, ui, 2)
-  assert(#requests == 7 and controller.overlay.boxes[1].entry.pos0 == "2s")
-  complete(requests[7]); drain()
-  assert(controller.overlay.boxes[1].entry.pos0 == "2s", "late nearby results only update the cache")
-  controller:close()
-end)
-
 test("priority protects nearer work, and cancel callbacks cannot release replacement jobs", function()
   local pool = require("word_wise_requests").new(2)
   local first = assert(pool:reserve("first", 10, 10))
@@ -404,87 +322,6 @@ test("priority protects nearer work, and cancel callbacks cannot release replace
   local replacement = assert(pool:reserve("first", 10, 10))
   assert(not pool:remove(first) and pool.jobs.first == replacement)
   pool:cancel_all(); assert(not next(pool.jobs))
-end)
-
-test("cached current pages prefetch the next page even with five other queries active", function()
-  local controller, ui = start(many_pages(10)); drain(); complete(requests[1])
-  -- Navigate before the page-2 prefetch starts, leaving a gap to fill on return.
-  for page = 3, 7 do turn(controller, ui, page) end
-  assert(active_count(controller) == 5 and #requests == 6)
-  turn(controller, ui, 1)
-  assert(#requests == 7 and requests[7].page.tokens[1].text == "page2")
-  assert(requests[6].cancels == 1 and requests[2].cancels == 0)
-  assert(active_count(controller) == 5 and controller.overlay.boxes[1].entry.pos0 == "1s")
-  controller:close()
-end)
-
-test("prefetch completion on arrival starts read-ahead immediately and resume retains cache", function()
-  local controller, ui = start(many_pages(4)); drain(); complete(requests[1]); drain()
-  ui.document.page = 2; controller:refresh()
-  assert(scheduled[controller.pending] == 0.6)
-  complete(requests[2])
-  assert(scheduled[controller.pending] == 0, "completion must not wait for the settle timer")
-  drain(); assert(#requests == 3)
-  controller:suspend(); assert(requests[3].cancels == 1)
-  controller:resume()
-  assert(controller.overlay.boxes[1].entry.pos0 == "2s")
-  drain()
-  assert(#requests == 4 and requests[4].page.tokens[1].text == "page3")
-  controller:close()
-end)
-
-test("page ranges prefetch whole spreads, honor hidden flows and keep scroll extraction", function()
-  local doc = document(many_pages(5))
-  local ui = make_ui(doc)
-  doc.visible_pages = 2
-  local target = Page.target(ui)
-  assert(target.number == 1 and target.last == 2)
-  target = Page.following(ui, target)
-  assert(target.number == 3 and target.last == 4)
-  local page = Page.new(ui, target)
-  assert(Page.step(doc, page) and #page.words == 2 and page.words[1].text == "page3")
-  assert(doc.page == 1)
-  doc.getNextPage = function(_, p) return p == 2 and 5 or 0 end
-  target = Page.following(ui, Page.target(ui))
-  assert(target.number == 5 and target.last == 5)
-  assert(not Page.following(ui, target))
-  ui.view.view_mode = "scroll"
-  target = Page.target(ui)
-  assert(not target.last and not Page.following(ui, target))
-  page = Page.new(ui, target)
-  assert(Page.step(doc, page) and #page.words == 1 and page.words[1].text == "page1")
-end)
-
-test("selection pauses offscreen prefetch and navigation gives the visible scan priority", function()
-  local pages = many_pages(4)
-  for i = 2, 60 do pages[2][i] = "word" .. i end
-  local controller, ui = start(pages); drain(); complete(requests[1])
-  ui.highlight.selected_text, ui.document.selection_active = {}, true
-  local reads = ui.document.reads
-  tick(); assert(ui.document.reads == reads and #requests == 1)
-  ui.highlight.selected_text, ui.document.selection_active = nil, false
-  tick(); assert(ui.document.reads == reads + 24 and #requests == 1)
-  turn(controller, ui, 3)
-  assert(#requests == 2 and requests[2].page.tokens[1].text == "page3")
-  complete(requests[2]); drain()
-  assert(#requests == 3 and requests[3].page.tokens[1].text == "page4")
-  controller:close()
-end)
-
-test("selection pauses extraction before and between batches", function()
-  local words = {}; for i = 1, 60 do words[i] = "word" .. i end
-  local controller, ui = start({ words, { "next" } })
-  ui.highlight.selected_text = {}; ui.document.selection_active = true
-  tick(); assert(ui.document.reads == 0 and #requests == 0)
-  ui.highlight.selected_text = nil; ui.document.selection_active = false
-  tick(); local reads = ui.document.reads
-  assert(reads == 24 and #requests == 0)
-  ui.highlight.hold_pos = {}; ui.document.selection_active = true
-  tick(); assert(ui.document.reads == reads and #requests == 0)
-  ui.highlight.hold_pos = nil; ui.document.selection_active = false
-  ui.document.page = 2; controller:refresh(); drain()
-  assert(#requests == 1 and #requests[1].page.tokens == 1)
-  controller:close()
 end)
 
 test("tap bubbles preserve native taps, saved highlights and long presses", function()
@@ -590,96 +427,494 @@ test("bubble placement respects scaled screen padding and painting does not quer
   view:paint({ paintRect = function() error("clipped text has no visible underline") end }, 0, 0)
 end)
 
-test("settings and reflow invalidate pending responses and cached geometry", function()
-  local controller, ui = start(); drain()
-  configuration.word_wise_level, configuration.output_language = "Advanced", "French"
-  controller:settings_changed()
-  complete(requests[1]); assert(#controller.overlay.boxes == 0)
-  drain(); assert(#requests == 2)
-  assert(requests[2].messages[1].content:find("French", 1, true))
-  assert(requests[2].messages[1].content:find("advanced proficiency", 1, true))
-  complete(requests[2]); assert(#controller.overlay.boxes == 1)
-  ui.document.hash = 2
-  controller:paint({ paintRect = function() error("old boxes painted") end }, 0, 0)
-  assert(#controller.overlay.boxes == 0)
-  drain(); assert(#requests == 3)
-  controller:close()
-end)
+-- Chunk and document-range lifecycle regression checks.
 
-test("settings, reflow, suspend and close cancel every active query and reject late results", function()
-  for _, action in ipairs({ "settings", "reflow", "suspend", "close" }) do
-    local first = #requests + 1
-    local controller, ui = start(many_pages(6)); drain()
-    for page = 2, 5 do turn(controller, ui, page) end
-    assert(active_count(controller) == 5)
-    if action == "settings" then
-      controller:settings_changed()
-    elseif action == "reflow" then
-      ui.document.hash = ui.document.hash + 1
-      controller:refresh()
-    else
-      controller[action](controller)
-    end
-    assert(active_count(controller) == 0)
-    for i = first, first + 4 do
-      assert(requests[i].cancels == 1)
-      complete(requests[i])
-    end
-    assert(#controller.overlay.boxes == 0 and not next(controller.cache))
-    controller:close()
-    assert(not next(scheduled))
+local function vocabulary(count, prefix)
+  local words = {}
+  for i = 1, count do words[i] = (prefix or "word") .. i end
+  return words
+end
+
+local function chunk_at(doc, index)
+  local source = EPUB.new(make_ui(doc))
+  local chunk = Chunk.new(source, assert(source:word(pointer(index, true))))
+  for _ = 1, 10000 do
+    local done, err = Chunk.step(chunk)
+    assert(not err, err)
+    if done then return chunk end
   end
-end)
+  error("chunk extraction stalled")
+end
 
-test("blank pages and synchronous startup failures do not stall or loop prefetch", function()
-  local controller, ui = start({ {}, { "word" }, {} }); drain()
-  assert(#requests == 1 and requests[1].page.tokens[1].text == "word" and ui.document.page == 1)
-  complete(requests[1]); drain()
-  turn(controller, ui, 2)
-  assert(#requests == 1 and #controller.overlay.boxes == 1)
-  turn(controller, ui, 3)
-  assert(#requests == 1 and #controller.overlay.boxes == 0)
-  controller:close()
+local function paragraph_pages(count)
+  local pages = {}
+  for i = 1, count do pages[i] = vocabulary(301, "p" .. i .. "w") end
+  return pages
+end
 
-  requests.start_error = true
-  controller = start(many_pages(4)); drain()
-  assert(#requests == 4 and active_count(controller) == 0 and not next(scheduled))
-  controller:close()
-end)
-
-test("empty pages cache, failures stay quiet, and page revisits can retry", function()
-  local controller, ui = start(); drain(); complete(requests[1], {})
-  ui.document.page = 2; controller:refresh(); drain()
-  requests[2].callbacks.on_error("offline")
+local function ready(pages)
+  local controller, ui = start(pages or paragraph_pages(5))
   drain()
-  assert(#controller.overlay.boxes == 0 and not next(scheduled))
-  ui.document.page = 1; controller:refresh(); drain(); assert(#requests == 3)
-  ui.document.page = 2; controller:refresh(); drain(); assert(#requests == 3)
-  requests[3].callbacks.on_done("malformed")
-  assert(#controller.overlay.boxes == 0)
-  controller:close()
-  requests.synchronous_error = true
-  controller = start(); drain()
-  assert(not next(controller.requests.jobs) and #requests == 5)
+  return controller, ui
+end
+
+local function settle()
+  for _ = 1, 100 do
+    drain()
+    local active
+    for _, request in ipairs(requests) do
+      if not request.done and request.cancels == 0 then active = request; break end
+    end
+    if not active then return end
+    active.done = true
+    complete(active)
+  end
+  error("request loop")
+end
+
+test("chunks include full paragraphs until strictly over 300 words", function()
+  local doc = document({ vocabulary(150), vocabulary(150), { "extra" }, { "excluded" } })
+  local chunk = chunk_at(doc, 1)
+  assert(chunk.count == 301 and #chunk.words == 301 and chunk.pos1 == "301e")
+  assert(chunk.context:find("\n", 1, true) and not chunk.context:find("excluded", 1, true))
+  doc = document({ vocabulary(125), vocabulary(125), vocabulary(125), { "excluded" } })
+  chunk = chunk_at(doc, 1)
+  assert(chunk.count == 375 and #chunk.words == 375)
+  -- A short final book passage still includes its one complete paragraph.
+  chunk = chunk_at(document({ { "last", "paragraph" } }), 2)
+  assert(chunk.count == 2 and chunk.pos0 == "1s")
+end)
+
+test("one oversized paragraph is never split at a word or page limit", function()
+  local doc = document({ vocabulary(1600), { "excluded" } })
+  local chunk = chunk_at(doc, 900)
+  assert(chunk.count == 1600 and #chunk.words == 1600)
+  assert(chunk.pos0 == "1s" and chunk.pos1 == "1600e")
+end)
+
+test("inline formatting fragments do not inflate the 300-word threshold", function()
+  local first = { "hel", "lo" }
+  for i = 1, 299 do first[#first + 1] = "word" .. i end
+  local doc = document({ first, { "extra" }, { "excluded" } })
+  doc.joiners = { [2] = "" }
+  local chunk = chunk_at(doc, 1)
+  assert(chunk.count == 301 and #chunk.words == 302)
+  assert(chunk.context:sub(1, 5) == "hello" and chunk.pos1 == "302e")
+end)
+
+test("a paragraph spanning displayed pages is analyzed once with full context", function()
+  local controller, ui = start({ { "give" }, { "way" }, vocabulary(301), { "after" } })
+  ui.document.breaks[2], ui.document.breaks[3] = nil, nil
+  drain()
+  assert(#requests == 1 and #requests[1].page.tokens == 303)
+  complete(requests[1], { { first = 1, last = 2, meaning = "stop resisting" } })
+  drain() -- the next chunk is a separate query
+  assert(#requests == 2)
+  local scans = #requests
+  turn(controller, ui, 2)
+  assert(#requests == scans and #controller.overlay.boxes > 0)
+  assert(controller.overlay.boxes[1].entry.pos0 == "1s" and controller.overlay.boxes[1].entry.pos1 == "2e")
+  turn(controller, ui, 3)
+  assert(#requests == scans, "reuse the whole paragraph on its third displayed page")
   controller:close()
 end)
 
-test("suspend, resume and close clean up requests, hooks, cache and timers", function()
-  local controller, ui = start(); drain()
-  local tap, hold = controller.original_tap, controller.original_hold
-  controller:suspend(); assert(requests[1].cancels == 1 and not next(scheduled))
+test("phrases spanning multiple pages remain visible between their endpoints", function()
+  local doc = document({ { "a" }, { "long" }, { "phrase" } })
+  doc.page = 2
+  local source = EPUB.new(make_ui(doc))
+  local boxes = source:boxes({ { pos0 = "1s", pos1 = "3e", meaning = "simple meaning" } }, 600, 800)
+  assert(#boxes == 1, "the middle page also needs the phrase underline")
+end)
+
+test("long paragraphs receive current-page priority even when starting far behind it", function()
+  local controller, ui = start(many_pages(10))
+  ui.document.page = 8
+  assert(controller:priority_page({ pos0 = "1s", pos1 = "8e" }) == 8)
+  assert(controller:priority_page({ pos0 = "9s", pos1 = "10e" }) == 9)
+  assert(controller:priority_page({ pos0 = "1s", pos1 = "3e" }) == 3)
+  controller:close()
+end)
+
+test("prefetch processes two chunks sequentially without turning pages", function()
+  local controller, ui = ready()
+  assert(#requests == 1 and #requests[1].page.tokens == 301)
+  complete(requests[1]); drain(); assert(#requests == 2)
+  complete(requests[2]); drain(); assert(#requests == 3)
+  complete(requests[3]); drain()
+  assert(#requests == 3 and active_count(controller) == 0 and ui.document.page == 1)
+  assert(#controller.overlay.boxes == 1)
+  turn(controller, ui, 2)
+  assert(#controller.overlay.boxes == 1 and #requests == 4)
+  assert(requests[4].page.tokens[1].text == "p4w1")
+  controller:close()
+end)
+
+test("every visible chunk is processed before speculative chunks", function()
+  local controller, ui = start({ vocabulary(903), vocabulary(301) })
+  ui.document.breaks[302], ui.document.breaks[603] = true, true
+  drain()
+  assert(#requests[1].page.tokens == 301)
+  complete(requests[1]); drain()
+  assert(requests[2].page.tokens[1].text == "word302")
+  complete(requests[2]); drain()
+  assert(requests[3].page.tokens[1].text == "word603")
+  complete(requests[3]); drain()
+  assert(requests[4].page.tokens[1].text == "word1" and #controller.overlay.boxes == 3)
+  controller:close()
+end)
+
+test("more than 40 pages remain annotated through repeated cache evictions", function()
+  local controller, ui = ready(paragraph_pages(45))
+  for page = 1, 43 do
+    turn(controller, ui, page)
+    settle()
+    assert(#controller.overlay.boxes == 1, "missing visible definition on page " .. page)
+    assert(controller.overlay.boxes[1].entry.pos0 == pointer(ui.document.ranges[page].first))
+    assert(#controller.cache.order <= 16)
+  end
+  local count = #requests
+  turn(controller, ui, 1); settle()
+  assert(#requests > count and #controller.overlay.boxes == 1, "evicted content must query again")
+  controller:close()
+end)
+
+test("cache uses recent access and protects visible ranges from late results", function()
+  local source = EPUB.new(make_ui(document({ vocabulary(30) })))
+  local cache = Cache.new(16, source)
+  local function put(i, protected)
+    cache:put({ id = pointer(i), pos0 = pointer(i), pos1 = pointer(i, true) }, {}, protected)
+  end
+  for i = 1, 16 do put(i) end
+  assert(cache:find({ pos0 = "1s", pos1 = "1e" }))
+  put(17)
+  assert(cache.records["1s"] and not cache.records["2s"])
+  for i = 18, 30 do put(i, { ["1s"] = true }) end
+  assert(cache.records["1s"] and #cache.order == 16)
+end)
+
+test("dense visible text can exceed the cache budget without a prefetch loop", function()
+  local controller, ui = start({ vocabulary(903), vocabulary(301) })
+  ui.document.breaks[302], ui.document.breaks[603] = true, true
+  controller.cache.limit = 2
+  settle()
+  assert(#requests == 3 and #controller.cache.order == 3 and #controller.overlay.boxes == 3)
+  assert(not next(scheduled), "speculative chunks must not be queried and immediately evicted")
+  turn(controller, ui, 2); settle()
+  assert(#requests == 4 and #controller.cache.order == 2 and #controller.overlay.boxes == 1)
+  controller:close()
+end)
+
+test("scroll position and two-page spread changes reuse document ranges", function()
+  local controller, ui = ready(paragraph_pages(5))
+  settle()
+  ui.view.view_mode = "scroll"
+  controller:layout_changed(); drain()
+  assert(#requests == 3 and #controller.overlay.boxes == 1)
+  ui.view.view_mode = "page"
+  ui.document.visible_pages = 2
+  controller:layout_changed(); drain()
+  assert(#requests == 4, "the spread is covered and only its following chunk needs a query")
+  controller:close()
+end)
+
+test("font changes reuse completed and in-flight meanings and rebuild geometry", function()
+  local controller, ui = ready()
+  complete(requests[1]); drain()
+  local active = requests[2]
+  ui.document.hash = 2
+  ui.document.boxes = { { x = 75, y = 200, w = 45, h = 24 } }
+  controller:layout_changed(); drain()
+  assert(#requests == 2 and active.cancels == 0 and controller.overlay.boxes[1].box.x == 75)
+  complete(active); drain()
+  assert(#requests == 3 and #controller.overlay.boxes == 1)
+  ui.document.hash = 3
+  controller:settings_changed(); drain()
+  assert(#requests == 3 and requests[3].cancels == 0)
+  controller:close()
+end)
+
+test("repagination exposes cached occurrences without a new query", function()
+  local controller, ui = ready(paragraph_pages(3))
+  complete(requests[1]); drain()
+  -- Change a page boundary, keeping document positions intact.
+  ui.document.ranges[1].last = 150
+  ui.document.ranges[2].first = 151
+  ui.document.page, ui.document.hash = 2, 2
+  controller:layout_changed(); drain()
+  assert(#requests == 2 and requests[2].cancels == 0)
+  complete(requests[2], { { first = 1, last = 1, meaning = "contextual meaning" } }); drain()
+  assert(#controller.overlay.boxes == 1 and #requests == 3)
+  controller:close()
+end)
+
+test("meaning settings cancel all requests and reject late callbacks", function()
+  local controller, ui = ready()
+  for page = 2, 5 do turn(controller, ui, page) end
+  assert(active_count(controller) == 5)
+  configuration.word_wise_model, configuration.output_language = "different-model", "French"
+  controller:settings_changed()
+  for _, request in ipairs(requests) do
+    assert(request.cancels == 1)
+    complete(request)
+  end
+  assert(#controller.overlay.boxes == 0 and #controller.cache.order == 0)
+  drain()
+  assert(#requests == 6 and requests[6].callbacks.model == "different-model")
+  assert(requests[6].messages[1].content:find("French", 1, true))
+  controller:close()
+end)
+
+test("navigation caps active requests and reuses a pending chunk", function()
+  local controller, ui = ready(paragraph_pages(10))
+  for page = 2, 5 do turn(controller, ui, page) end
+  assert(active_count(controller) == 5 and #requests == 5)
+  turn(controller, ui, 2)
+  assert(#requests == 5)
+  turn(controller, ui, 6)
+  assert(active_count(controller) == 5 and requests[1].cancels == 1 and #requests == 6)
   complete(requests[1]); assert(#controller.overlay.boxes == 0)
-  controller:resume(); drain(); assert(#requests == 2)
-  complete(requests[2])
-  for i = 1, 20 do controller:remember(tostring(i), {}) end
-  assert(#controller.cache_order == 16 and not controller.cache["1"])
+  complete(requests[6]); drain()
+  assert(#controller.overlay.boxes == 1)
+  controller:close()
+end)
+
+test("selection pauses every extraction batch and navigation abandons old extraction", function()
+  local controller, ui = start(paragraph_pages(3))
+  ui.highlight.selected_text, ui.document.selection_active = {}, true
+  tick(); assert(ui.document.reads == 0 and #requests == 0)
+  ui.highlight.selected_text, ui.document.selection_active = nil, false
+  tick(); local reads = ui.document.reads
+  assert(reads == 24 and #requests == 0)
+  ui.highlight.hold_pos, ui.document.selection_active = {}, true
+  tick(); assert(ui.document.reads == reads)
+  ui.highlight.hold_pos, ui.document.selection_active = nil, false
+  turn(controller, ui, 2)
+  assert(#requests == 1 and requests[1].page.tokens[1].text == "p2w1")
+  controller:close()
+end)
+
+test("empty responses cache coverage and failed requests retry only on a later visit", function()
+  local controller, ui = ready(paragraph_pages(3))
+  complete(requests[1], {}); drain()
+  requests[2].callbacks.on_error("offline"); drain()
+  complete(requests[3]); drain()
+  assert(#requests == 3 and #controller.overlay.boxes == 0)
+  turn(controller, ui, 2)
+  assert(#requests == 4, "failed paragraph retries on its next visit")
+  complete(requests[4]); drain()
+  turn(controller, ui, 1)
+  assert(#requests == 4 and #controller.overlay.boxes == 0, "empty successful response is cached")
+  controller:close()
+end)
+
+test("startup errors and corrupt extraction stay quiet without automatic retry loops", function()
+  requests.start_error = true
+  local controller = ready(paragraph_pages(4))
+  drain()
+  assert(#requests == 3 and active_count(controller) == 0)
+  controller:close()
+  requests.start_error = nil
+  controller = start()
+  controller.ui.document.getTextFromXPointers = function() error("bad document") end
+  drain()
+  assert(controller.scan_failed and #warnings > 0 and not next(scheduled))
+  controller:close()
+end)
+
+test("synchronous transport completion does not leave jobs or stale scan markers", function()
+  requests.synchronous_success = true
+  local controller = ready(paragraph_pages(4))
+  drain()
+  assert(#requests == 3 and active_count(controller) == 0 and #controller.overlay.boxes == 1)
+  controller:close()
+  requests.synchronous_success, requests.synchronous_error = nil, true
+  controller = ready(paragraph_pages(4)); drain()
+  assert(#requests == 6 and active_count(controller) == 0)
+  controller:close()
+end)
+
+test("empty EPUB fragments are skipped and backwards navigation cannot loop", function()
+  local doc = document({ { "before", " ", "after" } })
+  local chunk = chunk_at(doc, 1)
+  assert(#chunk.words == 2 and chunk.words[2].text == "after")
+  local source = EPUB.new(make_ui(doc))
+  local last = source:word("3e")
+  assert(source:previous(last).text == "before")
+  doc.getPrevVisibleWordEnd = function(_, pos) return pos end
+  assert(not pcall(source.previous, source, last))
+end)
+
+test("suspend and close cancel transport, timers and hooks while resume reuses cache", function()
+  local controller, ui = ready()
+  complete(requests[1]); drain()
+  local tap, hold = controller.original_tap, controller.original_hold
+  controller:suspend(); assert(requests[2].cancels == 1 and not next(scheduled))
+  complete(requests[2]); assert(#controller.overlay.boxes == 0)
+  controller:resume(); drain()
+  assert(#requests == 3 and #controller.overlay.boxes == 1)
   controller:close(); controller:close()
-  assert(not next(controller.cache) and not next(ui.view.view_modules) and not next(scheduled))
-  assert(ui.highlight.onTap == tap and ui.highlight.onHold == hold)
-  controller, ui = start()
-  local later_wrapper = function() return "another plugin" end
-  ui.highlight.onTap = later_wrapper
-  controller:close(); assert(ui.highlight.onTap == later_wrapper)
+  assert(requests[3].cancels == 1 and #controller.cache.order == 0 and not next(scheduled))
+  assert(not next(ui.view.view_modules) and ui.highlight.onTap == tap and ui.highlight.onHold == hold)
+end)
+
+local function pdf_ui(pages)
+  local ui = make_ui(document({ { "unused" } }))
+  local doc = { file = "book.PDF", info = { number_of_pages = #pages }, configurable = {} }
+  function doc:getPageTextBoxes(number) return pages[number] end
+  function doc:nativeToPageRectTransform(_, box)
+    if self.transform_error then error("bad transform") end
+    if self.configurable.text_wrap == 1 then
+      return { x = box.x + 20, y = box.y + 40, w = box.w, h = box.h }
+    end
+    return box
+  end
+  ui.document = doc
+  ui.view.state = { page = 1, zoom = 1, rotation = 0, offset = { x = 0, y = 0 } }
+  ui.view.visible_area = { x = 0, y = 0, w = 600, h = 800 }
+  function ui.view:pageToScreenTransform(number, box)
+    if not self.page_scroll and number ~= self.state.page then error("offscreen page transformed") end
+    return { x = (box.x - self.visible_area.x) * self.state.zoom,
+      y = (box.y - self.visible_area.y) * self.state.zoom, w = box.w * self.state.zoom, h = box.h * self.state.zoom }
+  end
+  return ui
+end
+
+local function pdf_line(texts, y, x)
+  local line = { x0 = x or 10, y0 = y, x1 = (x or 10) + #texts * 15, y1 = y + 12 }
+  for i, word in ipairs(texts) do
+    line[i] = { word = word, x0 = line.x0 + (i - 1) * 15, y0 = y, x1 = line.x0 + i * 15, y1 = y + 12 }
+  end
+  return line
+end
+
+test("PDF chunks preserve paragraph boundaries and native occurrence coordinates", function()
+  local ui = pdf_ui({ { pdf_line(vocabulary(150), 10), pdf_line(vocabulary(150), 50),
+    pdf_line({ "extra" }, 90), pdf_line({ "excluded" }, 130) } })
+  local source = PDF.new(ui)
+  local chunk = Chunk.new(source, source:word(1, 1))
+  while not Chunk.step(chunk) do end
+  assert(chunk.count == 301 and #chunk.words == 301 and chunk.pos0.index == 1)
+  assert(chunk.context:find("\n\n", 1, true) and not chunk.context:find("excluded", 1, true))
+  local entries = assert(Prompt.validate({ entries = { { first = 149, last = 152, meaning = "simple meaning" } } }, chunk.words))
+  assert(#entries[1].positions == 4 and entries[1].pos0.page == 1)
+end)
+
+test("PDF continuation across physical pages includes the whole paragraph", function()
+  local ui = pdf_ui({ { pdf_line({ "give" }, 10) }, { pdf_line({ "way" }, 10), pdf_line(vocabulary(301), 50) } })
+  local source = PDF.new(ui)
+  local chunk = Chunk.new(source, source:word(2, 1))
+  while not Chunk.step(chunk) do end
+  assert(chunk.words[1].text == "give" and chunk.words[2].text == "way" and chunk.count == 303)
+  local entries = assert(Prompt.validate({ entries = { { first = 1, last = 2, meaning = "stop resisting" } } }, chunk.words))
+  assert(#entries[1].positions == 2)
+  assert(#source:boxes(entries, 600, 800) == 1)
+  ui.view.state.page = 2
+  assert(#source:boxes(entries, 600, 800) == 1)
+end)
+
+test("PDF definitions survive zoom crop and reflow with transformed underlines", function()
+  local ui = pdf_ui({ { pdf_line({ "difficult." }, 20) }, { pdf_line({ "another." }, 20) } })
+  local controller = assert(WordWise.new { ui = ui })
+  controller:refresh(); drain()
+  assert(#requests == 1 and #requests[1].page.tokens == 2)
+  complete(requests[1]); drain()
+  assert(controller.overlay.boxes[1].box.x == 10)
+  ui.view.state.zoom = 2
+  ui.view.visible_area.x = 5
+  controller:refresh(); drain()
+  assert(#requests == 1 and controller.overlay.boxes[1].box.x == 10 and controller.overlay.boxes[1].box.w == 30)
+  ui.document.configurable.text_wrap = 1
+  controller:layout_changed(); drain()
+  assert(#requests == 1 and controller.overlay.boxes[1].box.x == 50)
+  ui.document.transform_error = true
+  controller:layout_changed(); drain(); assert(#controller.overlay.boxes == 0)
+  controller:close()
+end)
+
+test("PDF scroll signatures include every visible page and its position", function()
+  local ui = pdf_ui({ { pdf_line({ "first." }, 10) }, { pdf_line({ "second." }, 10) } })
+  ui.view.page_scroll = true
+  ui.view.page_states = { { page = 1, zoom = 1, visible_area = { y = 0 } },
+    { page = 2, zoom = 1, visible_area = { y = 0 } } }
+  local source = PDF.new(ui)
+  local viewport = source:viewport()
+  assert(source:step_viewport(viewport) and #viewport.words == 2)
+  local signature = source:signature(600, 800)
+  ui.view.page_states[2].visible_area.y = 10
+  assert(signature ~= source:signature(600, 800))
+end)
+
+local function forbid_pdf_ocr(doc)
+  local function forbidden() error("Word Wise must only read embedded PDF text") end
+  doc.getTextBoxes, doc.getOCRWord, doc.getOCRText = forbidden, forbidden, forbidden
+  doc.koptinterface = { getNativeOCRWord = forbidden }
+end
+
+test("image-only PDF regions are skipped without any recognition fallback", function()
+  local line = pdf_line({ "placeholder" }, 10)
+  line[1].word = nil
+  local ui = pdf_ui({ { line } })
+  forbid_pdf_ocr(ui.document)
+  ui.document.configurable.text_wrap = 1
+  local source = PDF.new(ui)
+  assert(not source:word(1, 1))
+  local controller = assert(WordWise.new { ui = ui })
+  controller:refresh(); drain()
+  assert(#requests == 0 and #controller.overlay.boxes == 0 and not controller.scan_failed)
+  controller:close()
+end)
+
+test("embedded PDF text is used even when KOReader has forced OCR enabled", function()
+  local ui = pdf_ui({ { pdf_line({ "digital", "text" }, 10) } })
+  ui.document.configurable.forced_ocr = 1
+  forbid_pdf_ocr(ui.document)
+  local controller = assert(WordWise.new { ui = ui })
+  controller:refresh(); drain()
+  assert(#requests == 1 and requests[1].page.tokens[1].text == "digital")
+  complete(requests[1]); drain()
+  ui.document.configurable.doc_language = "fra"
+  controller:layout_changed(); drain()
+  assert(#requests == 1 and #controller.overlay.boxes == 1)
+  controller:close()
+end)
+
+test("mixed PDF regions keep only embedded words and nil text layers are empty", function()
+  local line = pdf_line({ "digital", "placeholder", " ", "text" }, 10)
+  line[2].word = nil
+  local ui = pdf_ui({ { line }, {} })
+  forbid_pdf_ocr(ui.document)
+  local source = PDF.new(ui)
+  local viewport = source:viewport(); assert(source:step_viewport(viewport))
+  assert(#viewport.words == 2 and source:text(viewport.words) == "digital text")
+  assert(viewport.words[2].pos0.box.x == line[4].x0)
+  ui.document.getPageTextBoxes = function() return nil end
+  source = PDF.new(ui)
+  viewport = source:viewport(); assert(source:step_viewport(viewport) and #viewport.words == 0)
+end)
+
+test("PDF hyphenation joins line continuations while preserving paragraph breaks", function()
+  local ui = pdf_ui({ { pdf_line({ "hyphen-" }, 10), pdf_line({ "ated" }, 25),
+    pdf_line({ "paragraph-" }, 80), pdf_line({ "break" }, 130) } })
+  local source = PDF.new(ui)
+  local viewport = source:viewport(); assert(source:step_viewport(viewport))
+  assert(source:text(viewport.words) == "hyphenated\n\nparagraph-\n\nbreak")
+end)
+
+test("blank PDF pages send no requests and malformed coordinates do not crash the reader", function()
+  local ui = pdf_ui({ {}, { pdf_line({ "word" }, 10) } })
+  local controller = assert(WordWise.new { ui = ui })
+  controller:refresh(); drain(); assert(#requests == 0)
+  ui.view.state.page = 2
+  controller:refresh(); drain(); assert(#requests == 1)
+  controller:close()
+  local line = pdf_line({ "word" }, 10)
+  line[1].x0 = nil
+  ui = pdf_ui({ { line } })
+  controller = assert(WordWise.new { ui = ui })
+  controller:refresh(); drain()
+  assert(controller.scan_failed and #requests == 1 and #warnings > 0)
+  controller:close()
 end)
 
 for _, spec in ipairs(tests) do

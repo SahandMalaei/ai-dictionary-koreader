@@ -151,7 +151,7 @@ Benedict.onPosUpdate = Benedict.onPageUpdate
 
 function Benedict:onDocumentRerendered()
   if self.word_wise then
-    ErrorBoundary.call("refresh Word Wise layout", self.word_wise.settings_changed, self.word_wise)
+    ErrorBoundary.call("refresh Word Wise layout", self.word_wise.layout_changed, self.word_wise)
   end
 end
 
