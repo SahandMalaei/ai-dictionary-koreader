@@ -16,7 +16,7 @@ local Pronunciation = {}
 local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 local DEFAULT_OPENROUTER_VOICE = "Ara"
 local DEFAULT_OPENAI_VOICE = "nova"
-local DEFAULT_INSTRUCTIONS = "Speak clearly and loudly in natural American English with a female voice. Use precise dictionary-style pronunciation. Use the provided context only to choose the correct pronunciation, such as tense or part of speech. Speak only the selected text."
+local DEFAULT_INSTRUCTIONS = "Speak clearly and loudly in natural American English. Use precise dictionary-style pronunciation. Use the provided context only to choose the correct pronunciation, such as tense or part of speech. Speak only the selected text."
 local DEFAULT_RESPONSE_FORMAT = "mp3"
 
 https.TIMEOUT = REQUEST_TIMEOUT_SECONDS
