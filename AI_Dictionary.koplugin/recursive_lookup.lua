@@ -143,7 +143,7 @@ function RecursiveLookup:run(entry)
           entry.message_history[#entry.message_history + 1] = { role = "assistant", content = answer }
         end
       end,
-      self.request_parameters,
+      self.feature,
       function()
         if entry.cancelled then return end
         entry.finished = true

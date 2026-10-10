@@ -31,7 +31,7 @@ local state = {
   last_query = "",
   last_preface_with_selection = false,
   last_display_selection = "",
-  last_request_parameters = nil,
+  last_feature = "dictionary",
   last_is_report = false,
   last_is_dictionary = false,
   last_image_protocol = false,
@@ -60,7 +60,7 @@ local function resolve_query(query, replacements)
   return resolved_query
 end
 
-function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictionary, display_selection, preface_with_selection, on_success, request_parameters, on_complete, debug_prompt, session)
+function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictionary, display_selection, preface_with_selection, on_success, feature, on_complete, debug_prompt, session)
   local current_viewer = chatgpt_viewer
   local last_rendered_token_count = 0
   local last_rendered_dictionary_boundary = 0
@@ -271,7 +271,7 @@ function QuerySession.stream_answer(chatgpt_viewer, message_history, is_dictiona
   end
 
   cancel_stream = queryAI(message_history, {
-    request_parameters = request_parameters,
+    feature = feature or (is_dictionary and "dictionary" or "explain"),
     on_delta = function(_, accumulated, token_count)
       if session and (session.cancelled or session.stream_finished) then return end
       local visible, metadata_complete = visible_response(accumulated)
@@ -368,6 +368,7 @@ function QuerySession.stream_plain_answer(chatgpt_viewer, message_history, on_co
   end
 
   cancel_stream = queryAI(message_history, {
+    feature = "explain",
     on_delta = function(_, accumulated, token_count)
       if token_count - last_rendered_token_count >= STREAM_UPDATE_TOKEN_INTERVAL then
         last_rendered_token_count = token_count
@@ -395,7 +396,7 @@ function QuerySession.stream_plain_answer(chatgpt_viewer, message_history, on_co
   current_viewer.stream_cancel = cancel_stream
 end
 
-function QuerySession.query(plugin, reader_highlight_instance, dialog_title, preface_with_selection, query, request_parameters)
+function QuerySession.query(plugin, reader_highlight_instance, dialog_title, preface_with_selection, query)
   local ui = plugin.ui
   local context = Context.build_query_context(plugin, reader_highlight_instance, dialog_title)
   local query_text = resolve_query(query, context.replacements)
@@ -409,7 +410,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
       image_protocol = Config.is_images_enabled(),
       query_text = query_text,
       language_suffix = output_language_suffix(),
-      request_parameters = request_parameters,
+      feature = dialog_title == "AI Dictionary" and "dictionary" or "explain",
       stream_answer = QuerySession.stream_answer,
     }
   end
@@ -440,7 +441,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
   state.last_query = query_text
   state.last_preface_with_selection = preface_with_selection
   state.last_display_selection = context.display_selection
-  state.last_request_parameters = request_parameters
+  state.last_feature = "dictionary"
   state.last_is_report = false
   state.last_is_dictionary = false
   state.last_image_protocol = false
@@ -450,7 +451,7 @@ function QuerySession.query(plugin, reader_highlight_instance, dialog_title, pre
     session.query_start_action = nil
     if session.cancelled then return end
     QuerySession.stream_answer(chatgpt_viewer, session.message_history, false,
-      context.display_selection, preface_with_selection, nil, request_parameters, nil,
+      context.display_selection, preface_with_selection, nil, "dictionary", nil,
       Config.is_debug_mode_enabled() and query_text or nil, session)
   end)
   UIManager:scheduleIn(0.01, session.query_start_action)
@@ -460,7 +461,7 @@ function QuerySession.start_report(report_viewer, report_prompt)
   state.last_query = report_prompt
   state.last_preface_with_selection = false
   state.last_display_selection = ""
-  state.last_request_parameters = nil
+  state.last_feature = "explain"
   state.last_is_dictionary = false
   state.last_is_report = true
   state.last_image_protocol = false
@@ -546,7 +547,7 @@ function QuerySession.regenerate(plugin, chatgpt_viewer)
         state.last_display_selection,
         state.last_preface_with_selection,
         nil,
-        state.last_request_parameters,
+        state.last_feature,
         function()
           if tts_request then
             TTS.mark_text_query_finished(tts_request)

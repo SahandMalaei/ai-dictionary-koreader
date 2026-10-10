@@ -267,7 +267,7 @@ test("activation menu is a persistent boolean toggle", function()
   local plugin = { saveConfiguration = function(_, config) configuration = config; return true end }
   local toggle
   for _, item in ipairs(require("settings_menu").get_items(plugin)) do
-    if item.text == "Enable Word Sense" then toggle = item end
+    if item.text == "Word Sense" then toggle = item end
   end
   assert(toggle and not toggle.checked_func() and not toggle.sub_item_table)
   toggle.callback()
@@ -304,7 +304,7 @@ test("saved activation starts and stops the open reader without restarting", fun
 
   local toggle
   for _, item in ipairs(plugin:getSettingsMenuItems()) do
-    if item.text == "Enable Word Sense" then toggle = item end
+    if item.text == "Word Sense" then toggle = item end
   end
   toggle.callback()
   local controller = assert(plugin.word_sense)
@@ -362,13 +362,13 @@ test("Word Sense model setting is optional, editable and saved as a string", fun
   assert(normalized.word_sense_model == model)
   local saved = assert(loadstring(Config.serialize_configuration(normalized)))()
   assert(saved.word_sense_model == model)
-  assert(Config.display_value("word_sense_model", "") == "Use text model")
+  assert(Config.display_value("word_sense_model", "") == "Use default text model")
   local edited
   local items = require("settings_menu").get_items({
     editConfigurationValue = function(_, key, literal) edited = { key = key, literal = literal } end,
   })
   for _, item in ipairs(items) do
-    if item.text == "Word Sense model: Use text model" then item.callback() end
+    if item.text == "Word Sense model: Use default text model" then item.callback() end
   end
   assert(edited and edited.key == "word_sense_model" and edited.literal == false)
 end)
@@ -446,7 +446,8 @@ end)
 
 test("an outside tap dismisses the bubble before other reader tap zones", function()
   local controller, ui = start(); drain(); complete(requests[1])
-  assert(requests[1].callbacks.reasoning_effort == "low")
+  assert(requests[1].callbacks.feature == "word_sense")
+  assert(requests[1].callbacks.reasoning_effort == nil and requests[1].callbacks.provider_sort == nil)
   local word = { pos = { x = 15, y = 110 } }
   local outside = { pos = { x = 500, y = 500 } }
   assert(ui.highlight:onTap(nil, word) and controller.overlay.popup)
@@ -803,8 +804,34 @@ test("meaning settings cancel all requests and reject late callbacks", function(
   end
   assert(#controller.overlay.boxes == 0 and #controller.cache.order == 0)
   drain()
-  assert(#requests == 6 and requests[6].callbacks.model == "different-model")
+  assert(#requests == 6 and requests[6].callbacks.feature == "word_sense")
+  assert(controller.configuration.word_sense_model == "different-model")
   assert(requests[6].messages[1].content:find("French", 1, true))
+  controller:close()
+end)
+
+test("reasoning and JSON changes invalidate scans while unrelated feature settings do not", function()
+  local controller, ui = start(); drain()
+  local first = requests[1]
+  configuration.dictionary_reasoning_effort = "high"
+  configuration.explain_parameters_json = '{"provider":{"sort":"latency"}}'
+  controller:settings_changed(); drain()
+  assert(#requests == 1 and first.cancels == 0)
+  for _, change in ipairs({
+      { "word_sense_reasoning_effort", "high" },
+      { "word_sense_parameters_json", '{"provider":{"sort":"price"}}' },
+      { "text_endpoint_type", "openrouter" },
+      { "additional_parameters", { temperature = 0.2 } },
+    }) do
+    local previous = requests[#requests]
+    configuration[change[1]] = change[2]
+    controller:settings_changed()
+    assert(previous.cancels == 1 and #controller.cache.order == 0)
+    complete(previous)
+    assert(#controller.overlay.boxes == 0, "stale response survived parameter change")
+    drain()
+    assert(requests[#requests] ~= previous and requests[#requests].callbacks.feature == "word_sense")
+  end
   controller:close()
 end)
 

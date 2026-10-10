@@ -158,7 +158,7 @@ release(highlight, "a passage", false)
 highlight.buttons.aidictionary_1(highlight).callback()
 assert(requests[3].title == "AI Explain" and requests[3].preface == false)
 assert(requests[3].prompt == requests[4].prompt and requests[3].parameters == requests[4].parameters)
-assert(requests[3].parameters.plugins[1].id == "web")
+assert(requests[3].parameters == nil, "Explain extras must come from the generalized configuration")
 
 choices["AI Simplify"].callback()
 assert_choice(highlight, "AI Simplify")

@@ -92,6 +92,9 @@ function WordSense:refresh(force)
     or configuration.text_model or "gpt-5-nano"
   local scope = table.concat({
     configuration.word_sense_level, configuration.output_language, model, configuration.text_endpoint or "",
+    configuration.word_sense_reasoning_effort, tostring(configuration.word_sense_parameters_json),
+    tostring(configuration.text_endpoint_type or configuration.endpoint_type or ""),
+    Config.serialize_lua_value(configuration.additional_parameters),
   }, "\n")
   if scope ~= self.scope then
     self.requests:cancel_all()
@@ -253,9 +256,7 @@ function WordSense:request(chunk)
   if not job then return end -- Retry when a nearer request finishes and frees a slot.
   job.scope, job.chunk = self.scope, chunk
   local ok, cancel = pcall(queryAI, messages, {
-    model = configuration.word_sense_model,
-    reasoning_effort = "low",
-    provider_sort = "price",
+    feature = "word_sense",
     -- Keep compatibility with providers that do not support JSON response mode.
     on_done = ErrorBoundary.wrap("receive Word Sense definitions", function(response)
       self:finished(job, chunk, response)

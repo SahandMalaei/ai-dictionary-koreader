@@ -7,17 +7,7 @@ else
   print("api_key.lua not found, skipping...")
 end
 
-local function loadConfiguration()
-  package.loaded["configuration"] = nil
-  local ok, config = pcall(function() return require("configuration") end)
-  if ok then
-    return config
-  end
-
-  print("configuration.lua not found, skipping...")
-  return nil
-end
-
+local Config = require("configuration_manager")
 local https = require("ssl.https")
 local http = require("socket.http")
 local ltn12 = require("ltn12")
@@ -25,6 +15,7 @@ local json = require("json")
 local Device = require("device")
 local AndroidHttpWorker = require("android_http_worker")
 local BackgroundWorker = require("background_worker")
+local Parameters = require("request_parameters")
 
 local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 
@@ -33,59 +24,6 @@ http.TIMEOUT = REQUEST_TIMEOUT_SECONDS
 
 local function hasValue(value)
   return type(value) == "string" and value:match("%S") ~= nil
-end
-
-local function urlContains(url, needle)
-  return type(url) == "string" and url:lower():find(needle, 1, true) ~= nil
-end
-
-local ENDPOINT_PROFILES = {
-  {
-    id = "openai",
-    supports_verbosity = true,
-    default_reasoning_effort = "minimal",
-    matches = function(url)
-      return urlContains(url, "api.openai.com")
-    end,
-  },
-  {
-    id = "openrouter",
-    supports_verbosity = true,
-    supports_request_parameters = true,
-    default_reasoning_effort = "none",
-    matches = function(url)
-      return urlContains(url, "openrouter.ai")
-    end,
-    apply_body_defaults = function(requestBodyTable)
-      requestBodyTable.provider = requestBodyTable.provider or {
-        sort = "latency"
-      }
-    end,
-  },
-}
-
-local DEFAULT_ENDPOINT_PROFILE = {
-  id = "openai_compatible",
-}
-
-local function getEndpointProfile(api_url, configuration)
-  local configured_id = configuration and (configuration.text_endpoint_type or configuration.endpoint_type)
-
-  if hasValue(configured_id) then
-    for _, profile in ipairs(ENDPOINT_PROFILES) do
-      if profile.id == configured_id then
-        return profile
-      end
-    end
-  end
-
-  for _, profile in ipairs(ENDPOINT_PROFILES) do
-    if profile.matches and profile.matches(api_url) then
-      return profile
-    end
-  end
-
-  return DEFAULT_ENDPOINT_PROFILE
 end
 
 local function isHttpUrl(url)
@@ -152,82 +90,21 @@ local function parseSseBuffer(buffer, on_payload)
   return buffer
 end
 
-local function copyParameters(target, source)
-  if not source then
-    return
-  end
-
-  for key, value in pairs(source) do
-    target[key] = value
-  end
-end
-
-local function applyDefaultParameters(requestBodyTable, endpointProfile, request_parameters)
-  endpointProfile = endpointProfile or DEFAULT_ENDPOINT_PROFILE
-
-  if endpointProfile.apply_body_defaults then
-    endpointProfile.apply_body_defaults(requestBodyTable)
-  end
-
-  if endpointProfile.supports_request_parameters then
-    copyParameters(requestBodyTable, request_parameters)
-  end
-
-  if endpointProfile.default_reasoning_effort and requestBodyTable.reasoning_effort == nil then
-    requestBodyTable.reasoning_effort = endpointProfile.default_reasoning_effort
-  end
-
-  if endpointProfile.supports_verbosity and requestBodyTable.verbosity == nil then
-    requestBodyTable.verbosity = "low"
-  end
-end
-
-local function buildRequestBody(message_history, configuration, opts)
-  local api_url = configuration and (configuration.text_endpoint or configuration.provider) or "https://api.openai.com/v1/chat/completions"
-  local llm = configuration and (configuration.text_model or configuration.model) or "gpt-5-nano"
-  local endpointProfile = getEndpointProfile(api_url, configuration)
-
-  local requestBodyTable = {
-    model = llm,
-    messages = message_history,
-  }
-
-  copyParameters(requestBodyTable, configuration and configuration.additional_parameters)
-
-  applyDefaultParameters(requestBodyTable, endpointProfile, opts.request_parameters)
-  if endpointProfile.id == "openrouter" and hasValue(opts.provider_sort) then
-    -- Override sorting without dropping provider restrictions or changing shared settings.
-    local provider = {}
-    if type(requestBodyTable.provider) == "table" then
-      copyParameters(provider, requestBodyTable.provider)
-    end
-    provider.sort = opts.provider_sort
-    requestBodyTable.provider = provider
-  end
-  if hasValue(opts.model) then
-    requestBodyTable.model = opts.model:match("^%s*(.-)%s*$")
-  end
-  local reasoning_effort = opts.reasoning_effort
-  if reasoning_effort then
-    -- A per-query override must not change defaults or the shared configuration.
-    if endpointProfile.id == "openrouter" then
-      requestBodyTable.reasoning_effort = nil
-      requestBodyTable.reasoning = { effort = reasoning_effort }
-    else
-      requestBodyTable.reasoning_effort = reasoning_effort
-    end
-  end
-  requestBodyTable.stream = true
-
-  return api_url, json.encode(requestBodyTable)
-end
-
 local function queryAI(message_history, opts)
   opts = opts or {}
 
-  local configuration = loadConfiguration()
-  local api_key_value = configuration and configuration.api_key or api_key
-  local api_url, requestBody = buildRequestBody(message_history, configuration, opts)
+  local configuration = Config.load()
+  local api_key_value = hasValue(configuration.api_key) and configuration.api_key or api_key
+  local ok, api_url, body = pcall(Parameters.build, configuration, opts.feature, message_history)
+  if not ok or not api_url then
+    if opts.on_error then opts.on_error(ok and body or "Could not build AI request parameters.") end
+    return function() end
+  end
+  local encoded, requestBody = pcall(function() return json.encode(body) end)
+  if not encoded or type(requestBody) ~= "string" then
+    if opts.on_error then opts.on_error("Could not encode AI request parameters as JSON.") end
+    return function() end
+  end
 
   if not hasValue(api_key_value) and not isHttpUrl(api_url) then
     if opts.on_error then opts.on_error("No API key configured.") end

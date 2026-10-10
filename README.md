@@ -63,20 +63,58 @@ To launch an AI lookup directly when you release a text selection, choose **AI D
 | Setting | Purpose / default |
 | --- | --- |
 | `api_key` | Your provider's API key; shared by text and voice requests. |
-| `text_endpoint`, `text_model` | Full Chat Completions URL and model ID; defaults shown above. |
+| `text_endpoint`, `text_model` | Full Chat Completions URL and default model ID; defaults shown above. **Default text model** is used by any feature group whose model is blank. |
 | `output_language` | Language of Dictionary, Explain, and experimental Word Sense definitions; `"English"`. Dictionary section labels remain English. |
-| `word_sense_active` | Enable automatic Word Sense annotations; `false` by default. Toggle **Enable Word Sense** in the plugin settings or set this to `true` in `configuration.lua`. |
+| `word_sense_active` | Enable automatic Word Sense annotations; `false` by default. Toggle **Word Sense** in the plugin settings or set this to `true` in `configuration.lua`. |
 | `word_sense_level` | Word Sense reader proficiency: `"Basic"`, `"Intermediate"` (default), or `"Advanced"`. Choose from the reading-level list in the plugin settings. Basic provides the most help. |
-| `word_sense_model` | Optional model ID for Word Sense only; `""` uses `text_model`. Shares the text endpoint and API key, and requests low reasoning effort. |
+| `dictionary_model`, `explain_model`, `word_sense_model` | Optional models for Dictionary + Simplify, Explain + reports, and Word Sense. Each defaults to `""`, using `text_model`. All share the text endpoint and API key. |
+| `dictionary_reasoning_effort`, `explain_reasoning_effort`, `word_sense_reasoning_effort` | Separate reasoning controls for those groups; `""` sends no automatic reasoning parameters. Select an effort or **Use provider default** in settings. Supported levels depend on the provider and model. |
+| `dictionary_parameters_json`, `explain_parameters_json`, `word_sense_parameters_json` | Config-only strings containing extra JSON request fields for each group; `""` adds nothing. Hidden from the settings menu. |
 | `images` | Show Wikipedia images in Dictionary and Explain; `true`. |
 | `voice_endpoint`, `voice_model`, `voice_voice` | Optional Android pronunciation; see below. |
-| `update_check` | Check for updates at startup; `true`. |
+| `update_check` | **Auto-check for updates:** toggle; checks at startup when enabled (`true` by default). |
 | `debug_mode` | Show the query prompt alongside the answer for troubleshooting; `false`. |
 | `additional_parameters` | Optional Lua table of extra text API request parameters supported by your provider. |
 
+### Models, reasoning, and custom request parameters
+
+Dictionary and Simplify share `dictionary_model` and `dictionary_reasoning_effort`. Explain, its follow-up explorations, and vocabulary reports share the `explain_` settings. Word Sense uses the `word_sense_` settings. Regenerating keeps the same feature group. Blank models fall back to `text_model`, including on updates where the new settings are absent from the existing configuration.
+
+Blank reasoning means no automatic reasoning fields are sent. The model uses its provider default, which may include reasoning; blank is different from explicitly selecting `none`. The plugin recognizes OpenAI, OpenRouter (including its US/EU endpoints), Gemini's OpenAI-compatible endpoint, xAI, Mistral, DeepSeek, Groq, and Ollama's cloud endpoint or standard port 11434. These must be streaming Chat Completions endpoints. For an unknown endpoint, the reasoning setting adds no fields: supply its exact controls through JSON. A custom proxy can optionally use `text_endpoint_type = "openrouter"` (or `openai`, `gemini`, `xai`, `mistral`, `deepseek`, `groq`, `ollama`) to select a known format. Use `"openai_compatible"` to disable automatic detection.
+
+Models accept different effort levels even at the same provider. Selecting an unsupported level can produce an API error. Native Gemini, Claude Messages, and Responses endpoints require a different protocol and cannot be enabled just by adding JSON fields.
+
+The three JSON settings are edited only in `configuration.lua`. Add them inside its `CONFIGURATION` table. Lua's `[[ ... ]]` wrapper lets you paste ordinary JSON without escaping quotes:
+
+```lua
+dictionary_parameters_json = [[
+{
+    "provider": {"order": ["google"], "allow_fallbacks": true}
+}
+]],
+explain_parameters_json = [[
+{
+    "provider": {"sort": "latency"},
+    "plugins": [{"id": "web", "max_results": 3}],
+    "web_search_options": {"search_context_size": "low"}
+}
+]],
+word_sense_parameters_json = [[
+{
+    "provider": {"sort": "price"}
+}
+]],
+```
+
+These examples target OpenRouter. Provider `order` sets a preference; `only` restricts providers. Other endpoints need the fields documented by their provider. The plugin does not add provider sorting, verbosity, web-search plugins, or other optional API controls by itself. To enable Explain web search, supply it explicitly as in the example.
+
+The existing `additional_parameters` Lua table remains a shared source of explicit parameters. Feature JSON takes precedence over its matching top-level fields, replacing entire objects rather than merging their contents. Explicit reasoning controls in either source suppress automatically generated reasoning. Avoid supplying contradictory controls across the two sources. `model`, `messages`, and `stream` remain controlled by feature settings and the plugin. Arrays, empty objects, booleans, and JSON `null` retain their types. Invalid JSON blocks only the affected request and is reported safely; Word Sense logs errors without interrupting reading.
+
+New JSON fields default to empty when absent. The updater preserves your configuration file, and saving any setting writes the new default fields alongside your existing values.
+
 ### Experimental Word Sense
 
-This experimental version automatically scans existing text when enabled, using the configured text model after a short pause, requesting low reasoning effort for Word Sense queries only. Supported extensions are `.epub` (including EPUB 3), `.epub3`, `.kepub`, `.kepub.epub`, `.mobi`, `.txt`, `.htm`, `.html`, `.xhtml`, `.pdf`, `.djvu`, and `.djv`. KOReader must be able to open the file and expose its text and document positions. It marks difficult words, expressions, and idioms with subtle wavy underlines, with visual inspiration from [Footcream](https://github.com/Fank1/foot-cream). Tap one to see a contextual meaning of up to five words in a small bubble beside the text. Tap the bubble or elsewhere on the page to dismiss it; the dismissal tap does not also turn a page or open a menu. Tapping another underlined word switches the definition. Long-press selection and the existing dictionary, explain, and simplify actions remain available.
+This experimental version automatically scans existing text when enabled, using the configured Word Sense model after a short pause. Supported extensions are `.epub` (including EPUB 3), `.epub3`, `.kepub`, `.kepub.epub`, `.mobi`, `.txt`, `.htm`, `.html`, `.xhtml`, `.pdf`, `.djvu`, and `.djv`. KOReader must be able to open the file and expose its text and document positions. It marks difficult words, expressions, and idioms with subtle wavy underlines, with visual inspiration from [Footcream](https://github.com/Fank1/foot-cream). Tap one to see a contextual meaning of up to five words in a small bubble beside the text. Tap the bubble or elsewhere on the page to dismiss it; the dismissal tap does not also turn a page or open a menu. Tapping another underlined word switches the definition. Long-press selection and the existing dictionary, explain, and simplify actions remain available.
 
 Queries include complete paragraphs until their combined text exceeds 300 words. At least one paragraph is included, even when it alone exceeds 300 words; the last passage in a book may be shorter. Reflowable paragraphs can extend before and after the displayed page, preserving words and expressions across page boundaries. Paragraph boundaries follow KOReader's interpretation of the document; for TXT this depends on its line-break settings. Extremely large or malformed passages that exceed defensive extraction limits are skipped rather than queried as partial paragraphs.
 
@@ -86,7 +124,7 @@ Developers can add extensions in `word_sense_source.lua`. The two shared adapter
 
 Choose **AI Dictionary settings → Word Sense reading level → Basic / Intermediate / Advanced**. The level describes the reader's proficiency: Advanced marks only the most difficult vocabulary. Meanings follow `output_language`.
 
-Set **AI Dictionary settings → Word Sense model** to use a different model for passage scans. With an OpenRouter text endpoint, for example, set `word_sense_model = "deepseek/deepseek-v4.1-flash"` in `configuration.lua`. Word Sense keeps low reasoning enabled and sorts OpenRouter providers by price, preserving any other provider restrictions. Dictionary, Explain, Simplify, and reports continue using `text_model` and their existing routing. Leave the Word Sense model blank to use the main text model. Changing the model, endpoint, reading level, or output language cancels active scans and clears definitions that depend on those settings.
+Set **AI Dictionary settings → Word Sense model** to use a different model for passage scans. With an OpenRouter text endpoint, for example, set `word_sense_model = "deepseek/deepseek-v4.1-flash"` in `configuration.lua`. Configure its reasoning separately with **Word Sense reasoning effort**. Word Sense does not add provider sorting or force reasoning; provider preferences come from your custom parameters. Leave the Word Sense model blank to use the main text model. Changing the model, endpoint, reasoning, custom parameters, reading level, or output language cancels active scans and clears definitions that depend on those settings.
 
 Word Sense processes the chunks covering the visible text first, then the next two chunks, waiting for each query to finish and reusing cached results. It reads ahead without turning the page, including in reflowable scroll view and two-page spreads. Fixed-layout scans cover the physical pages intersecting the view. Developers can change `LOOKAHEAD_CHUNKS` in `word_sense.lua` (visible chunks are excluded from this count). Read-ahead pauses if visible chunks already occupy the cache budget.
 
@@ -94,7 +132,7 @@ Popup bubbles keep a minimum gap of 2 scaled pixels from the screen edges. Devel
 
 Page turns keep existing queries running, with up to five active Word Sense queries. Visible text has priority; when a new query needs a slot, the farthest active chunk is canceled to make room for closer work. Returning to a passage reuses its active query or cached definitions. Font, size, margin, and other layout changes preserve meanings and active queries, rebuilding screen geometry from document positions. Suspension and closing the book cancel outstanding work; canceled responses are ignored.
 
-Word Sense is off by default. Enable it with **AI Dictionary settings → Enable Word Sense**, or set `word_sense_active = true` in `configuration.lua`. Saving settings starts or stops it immediately for the open book. Disabling it cancels active scans, clears annotations and cached definitions, and restores normal tap handling. Scans send the current and prefetched passages to your configured provider and use its API allowance; a provider may still process a canceled request it already received. Completed results stay in memory while the book is open, with a budget of 16 recently used chunks. Visible chunks are protected from eviction; an unusually dense viewport may temporarily exceed that budget. Evicted passages can be queried again on return. Closing the book clears the cache. Nothing is added to lookup history or vocabulary reports. Network, extraction, or response errors leave the page usable without a popup error.
+Word Sense is off by default. Enable it with **AI Dictionary settings → Word Sense**, or set `word_sense_active = true` in `configuration.lua`. Saving settings starts or stops it immediately for the open book. Disabling it cancels active scans, clears annotations and cached definitions, and restores normal tap handling. Scans send the current and prefetched passages to your configured provider and use its API allowance; a provider may still process a canceled request it already received. Completed results stay in memory while the book is open, with a budget of 16 recently used chunks. Visible chunks are protected from eviction; an unusually dense viewport may temporarily exceed that budget. Evicted passages can be queried again on return. Closing the book clears the cache. Nothing is added to lookup history or vocabulary reports. Network, extraction, or response errors leave the page usable without a popup error.
 
 ### Pronunciation on Android
 

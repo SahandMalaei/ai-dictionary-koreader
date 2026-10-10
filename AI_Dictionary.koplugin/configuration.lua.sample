@@ -1,21 +1,32 @@
 local CONFIGURATION = {
+    update_check = true,
+    
+    output_language = "English",
+    images = true,
+
     api_key = "YOUR API KEY",
     
     text_endpoint = "https://api.openai.com/v1/chat/completions",
+
     text_model = "gpt-5-nano",
+
+    dictionary_model = "",
+    dictionary_reasoning_effort = "",
+    dictionary_parameters_json = "",
+
+    explain_model = "", -- Explain and vocabulary reports
+    explain_reasoning_effort = "",
+    explain_parameters_json = "",
 
     voice_endpoint = "https://api.openai.com/v1/audio/speech",
     voice_model = "gpt-4o-mini-tts",
     voice_voice = "nova",
-
-    output_language = "English",
-    word_sense_active = false, -- Enable automatic vocabulary annotations
-    word_sense_level = "Intermediate", -- Basic, Intermediate, or Advanced
-    word_sense_model = "", -- Optional model ID; blank uses text_model. Word Sense requests low reasoning.
-
-    images = true,
-
-    update_check = true,
+    
+    word_sense_active = false,
+    word_sense_level = "Intermediate",
+    word_sense_model = "",
+    word_sense_reasoning_effort = "",
+    word_sense_parameters_json = "",
     
     debug_mode = false,  
 }

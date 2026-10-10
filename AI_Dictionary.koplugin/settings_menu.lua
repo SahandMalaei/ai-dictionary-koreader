@@ -5,6 +5,7 @@ local _ = require("gettext")
 
 local Config = require("configuration_manager")
 local ErrorBoundary = require("error_boundary")
+local Parameters = require("request_parameters")
 
 local SettingsMenu = {}
 
@@ -27,6 +28,7 @@ function SettingsMenu.save_configuration(plugin, configuration)
 end
 
 function SettingsMenu.edit_configuration_value(plugin, key, parse_as_literal)
+  if Config.CONFIG_ONLY_CONFIGURATION_KEYS[key] then return end
   local configuration = Config.load()
   local current_value = configuration[key]
   local current_type = type(current_value)
@@ -44,8 +46,8 @@ function SettingsMenu.edit_configuration_value(plugin, key, parse_as_literal)
     title = "Edit " .. label,
     input = input_value,
     input_type = current_type == "number" and "number" or "text",
-    description = key == "word_sense_model"
-      and "Model ID for Word Sense. Leave blank to use Text model. Uses the same endpoint and API key, with low reasoning enabled."
+    description = (key == "word_sense_model" or key == "dictionary_model" or key == "explain_model")
+      and "Leave blank to use Default text model. Uses the same text endpoint and API key."
       or ((parse_as_literal or current_type == "table") and "Enter a Lua literal: string, number, boolean, or table." or nil),
     buttons = {
       {
@@ -94,6 +96,7 @@ function SettingsMenu.edit_configuration_value(plugin, key, parse_as_literal)
 end
 
 function SettingsMenu.edit_new_configuration_literal(plugin, key)
+  if Config.CONFIG_ONLY_CONFIGURATION_KEYS[key] then return end
   local value_dialog
   value_dialog = InputDialog:new {
     title = "Set " .. key,
@@ -161,6 +164,10 @@ function SettingsMenu.add_configuration_value(plugin)
               show_message("That setting is no longer used.")
               return
             end
+            if Config.CONFIG_ONLY_CONFIGURATION_KEYS[key] then
+              show_message("Edit that setting in configuration.lua.")
+              return
+            end
             if Config.CORE_CONFIGURATION_KEY_SET[key] then
               show_message("That setting is already available in settings.")
               return
@@ -184,15 +191,16 @@ function SettingsMenu.add_configuration_value(plugin)
   key_dialog:onShowKeyboard()
 end
 
-function SettingsMenu.delete_configuration_value(plugin, key)
-  local configuration = Config.load()
-  configuration[key] = nil
-  plugin:saveConfiguration(configuration)
-end
-
 function SettingsMenu.get_items(plugin)
   local configuration = Config.load()
-  local items = {}
+  local items = {
+    {
+      text = "Check for updates now",
+      callback = ErrorBoundary.wrap("manual update check", function()
+        plugin:checkForUpdates()
+      end),
+    },
+  }
   local written = {}
 
   local function add_value_item(key)
@@ -200,7 +208,27 @@ function SettingsMenu.get_items(plugin)
     local label = Config.CONFIGURATION_LABELS[key] or tostring(key)
     written[key] = true
 
-    if key == "word_sense_level" then
+    if type(key) == "string" and key:match("_reasoning_effort$") then
+      local choices = {}
+      for _, effort in ipairs(Parameters.EFFORTS) do
+        choices[#choices + 1] = {
+          text = effort == "" and "Use provider default" or effort,
+          radio = true,
+          checked_func = function() return Config.load()[key] == effort end,
+          callback = ErrorBoundary.wrap("set reasoning effort", function()
+            local updated_configuration = Config.load()
+            updated_configuration[key] = effort
+            plugin:saveConfiguration(updated_configuration)
+          end),
+        }
+      end
+      table.insert(items, {
+        text = label .. ": " .. Config.display_value(key, value),
+        text_func = function() return label .. ": " .. Config.display_value(key, Config.load()[key]) end,
+        help_text = "Use provider default sends no automatic reasoning parameters. Supported effort levels depend on the model. Unknown endpoints use custom JSON in configuration.lua.",
+        sub_item_table = choices,
+      })
+    elseif key == "word_sense_level" then
       local choices = {}
       for _, level in ipairs({ "Basic", "Intermediate", "Advanced" }) do
         choices[#choices + 1] = {
@@ -242,19 +270,12 @@ function SettingsMenu.get_items(plugin)
 
   for _, key in ipairs(Config.CORE_CONFIGURATION_KEYS) do
     add_value_item(key)
-    if key == "update_check" then
-      table.insert(items, {
-        text = "Check for updates now",
-        callback = ErrorBoundary.wrap("manual update check", function()
-          plugin:checkForUpdates()
-        end),
-      })
-    end
   end
 
   local custom_keys = {}
   for key, _ in pairs(configuration) do
-    if not written[key] and not Config.DEPRECATED_CONFIGURATION_KEYS[key] then
+    if not written[key] and not Config.DEPRECATED_CONFIGURATION_KEYS[key]
+        and not Config.CONFIG_ONLY_CONFIGURATION_KEYS[key] then
       table.insert(custom_keys, key)
     end
   end
@@ -262,25 +283,6 @@ function SettingsMenu.get_items(plugin)
 
   for _, key in ipairs(custom_keys) do
     add_value_item(key)
-  end
-
-  local delete_items = {}
-  for _, key in ipairs(custom_keys) do
-    if not Config.CORE_CONFIGURATION_KEY_SET[key] then
-      table.insert(delete_items, {
-        text = tostring(key),
-        callback = ErrorBoundary.wrap("delete custom setting", function()
-          plugin:deleteConfigurationValue(key)
-        end),
-      })
-    end
-  end
-
-  if #delete_items > 0 then
-    table.insert(items, {
-      text = "Delete custom setting",
-      sub_item_table = delete_items,
-    })
   end
 
   return items

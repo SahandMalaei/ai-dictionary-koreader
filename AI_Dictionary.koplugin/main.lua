@@ -16,9 +16,9 @@ local Benedict = InputContainer:new {
   is_doc_only = true,
 }
 
-function Benedict:Query(reader_highlight_instance, dialog_title, preface_with_selection, query, request_parameters)
+function Benedict:Query(reader_highlight_instance, dialog_title, preface_with_selection, query)
   return ErrorBoundary.call("query", QuerySession.query,
-    self, reader_highlight_instance, dialog_title, preface_with_selection, query, request_parameters)
+    self, reader_highlight_instance, dialog_title, preface_with_selection, query)
 end
 
 function Benedict:Regenerate(chatgpt_viewer)
@@ -90,10 +90,6 @@ end
 
 function Benedict:editNewConfigurationLiteral(key)
   return ErrorBoundary.call("edit new configuration value", SettingsMenu.edit_new_configuration_literal, self, key)
-end
-
-function Benedict:deleteConfigurationValue(key)
-  return ErrorBoundary.call("delete configuration value", SettingsMenu.delete_configuration_value, self, key)
 end
 
 function Benedict:checkForUpdates()

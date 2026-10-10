@@ -124,10 +124,11 @@ local plugin = { path = ".", ui = { highlight = { onClose = function() end } } }
 function plugin:Regenerate(viewer) Query.regenerate(self, viewer) end
 function plugin:playDictionaryPronunciation(request) self.spoken = request.text end
 local function start(kind)
-  Query.query(plugin, {}, kind or "AI Dictionary", true, "Original {selection}", { temperature = 0.1 })
+  Query.query(plugin, {}, kind or "AI Dictionary", true, "Original {selection}")
   local history = UI.active.lookup_history
   local action = UI.active.lookup_session.query_start_action
   assert(scheduled[action]); scheduled[action] = nil; action()
+  assert(requests[#requests].callbacks.feature == (kind == "AI Explain" and "explain" or "dictionary"))
   return history
 end
 local function run_pending()
@@ -137,15 +138,22 @@ local function run_pending()
 end
 local function finish(text) requests[#requests].callbacks.on_done(text or "[None]answer") end
 local function lookup(term)
+  local feature = requests[#requests].callbacks.feature
   UI.active.text_selection_callback(term, "popup " .. term)
   run_pending()
+  assert(requests[#requests].callbacks.feature == feature, "follow-up changed feature group")
 end
 local function go(offset) UI.active.onHistoryNavigate(offset) end
-local function regenerate() Query.regenerate(plugin, UI.active); run_pending() end
+local function regenerate()
+  local feature = requests[#requests].callbacks.feature
+  Query.regenerate(plugin, UI.active); run_pending()
+  assert(requests[#requests].callbacks.feature == feature, "regeneration changed feature group")
+end
 local function contains(text, value) assert(text:find(value, 1, true), text .. " missing " .. value) end
 
 -- Cached text, headers, pronunciation and images; delayed images stay on their node.
 local history = start()
+assert(requests[#requests].callbacks.feature == "dictionary")
 assert(not history:can_move(-1) and not history:can_move(1))
 finish("[Beaver]Definition: first answer")
 local first = history:current()
@@ -349,16 +357,20 @@ android = false
 
 -- The non-recursive Simplify and report flows still render and regenerate.
 start("AI Simplify")
+assert(requests[#requests].callbacks.feature == "dictionary")
 finish("simplified answer")
 assert(not UI.active.lookup_history)
 regenerate(); finish("regenerated simplification")
+assert(requests[#requests].callbacks.feature == "dictionary")
 contains(UI.active.text, "regenerated simplification")
 UI.active:onClose()
 local report = Viewer:new { text = "loading", benedict = plugin }
 UI:show(report)
 Query.start_report(report, "report prompt")
+assert(requests[#requests].callbacks.feature == "explain")
 finish("report answer")
 regenerate(); finish("regenerated report")
+assert(requests[#requests].callbacks.feature == "explain")
 contains(UI.active.text, "regenerated report")
 UI.active:onClose()
 

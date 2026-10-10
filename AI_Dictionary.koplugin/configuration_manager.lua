@@ -1,36 +1,36 @@
 local ConfigurationManager = {}
+local Parameters = require("request_parameters")
 
 ConfigurationManager.CORE_CONFIGURATION_KEYS = {
-  "api_key",
+  "update_check",
+  "output_language",
+  "images",
   "text_endpoint",
   "text_model",
+  "api_key",
+  "dictionary_model",
+  "dictionary_reasoning_effort",
+  "explain_model",
+  "explain_reasoning_effort",
   "voice_endpoint",
   "voice_model",
   "voice_voice",
-  "output_language",
   "word_sense_active",
   "word_sense_level",
   "word_sense_model",
-  "images",
-  "update_check",
+  "word_sense_reasoning_effort",
   "debug_mode",
 }
 
-ConfigurationManager.CORE_CONFIGURATION_KEY_SET = {
-  api_key = true,
-  text_endpoint = true,
-  text_model = true,
-  output_language = true,
-  word_sense_active = true,
-  word_sense_level = true,
-  word_sense_model = true,
-  voice_endpoint = true,
-  voice_model = true,
-  voice_voice = true,
-  images = true,
-  debug_mode = true,
-  update_check = true,
-}
+ConfigurationManager.CORE_CONFIGURATION_KEY_SET = {}
+for _, key in ipairs(ConfigurationManager.CORE_CONFIGURATION_KEYS) do
+  ConfigurationManager.CORE_CONFIGURATION_KEY_SET[key] = true
+end
+
+ConfigurationManager.CONFIG_ONLY_CONFIGURATION_KEYS = {}
+for _, feature in ipairs(Parameters.FEATURES) do
+  ConfigurationManager.CONFIG_ONLY_CONFIGURATION_KEYS[feature .. "_parameters_json"] = true
+end
 
 ConfigurationManager.BOOLEAN_CONFIGURATION_KEYS = {
   word_sense_active = true,
@@ -44,16 +44,23 @@ ConfigurationManager.DEPRECATED_CONFIGURATION_KEYS = {
   model = true,
   voice_api_key = true,
   voice_provider = true,
+  word_wise_level = true,
+  word_wise_model = true,
 }
 
 ConfigurationManager.CONFIGURATION_LABELS = {
   api_key = "API key",
   text_endpoint = "Text endpoint URL",
-  text_model = "Text model",
+  text_model = "Default text model",
+  dictionary_model = "Dictionary / Simplify model",
+  dictionary_reasoning_effort = "Dictionary / Simplify reasoning effort",
+  explain_model = "Explain / Report model",
+  explain_reasoning_effort = "Explain / Report reasoning effort",
   output_language = "Output language",
-  word_sense_active = "Enable Word Sense",
+  word_sense_active = "Word Sense",
   word_sense_level = "Word Sense reading level",
   word_sense_model = "Word Sense model",
+  word_sense_reasoning_effort = "Word Sense reasoning effort",
   additional_parameters = "Additional parameters",
   voice_endpoint = "Voice endpoint URL",
   voice_model = "Voice model",
@@ -61,7 +68,7 @@ ConfigurationManager.CONFIGURATION_LABELS = {
   tts_speed = "Voice speed",
   images = "Show images",
   debug_mode = "Debug mode",
-  update_check = "Check for updates",
+  update_check = "Auto-check for updates:",
 }
 
 function ConfigurationManager.get_configuration_path(plugin)
@@ -98,9 +105,16 @@ function ConfigurationManager.normalize(configuration)
   if level ~= "Basic" and level ~= "Intermediate" and level ~= "Advanced" then
     configuration.word_sense_level = "Intermediate"
   end
-  local model = configuration.word_sense_model
-  configuration.word_sense_model = type(model) == "string" and model:match("^%s*(.-)%s*$") or ""
-  if configuration.word_sense_model:find("%c") then configuration.word_sense_model = "" end
+  for _, feature in ipairs(Parameters.FEATURES) do
+    for _, suffix in ipairs({ "_model", "_reasoning_effort" }) do
+      local key = feature .. suffix
+      local value = configuration[key]
+      value = type(value) == "string" and value:match("^%s*(.-)%s*$") or ""
+      configuration[key] = value:find("%c") and "" or value
+    end
+    local key = feature .. "_parameters_json"
+    if configuration[key] == nil then configuration[key] = "" end
+  end
   return configuration
 end
 
@@ -261,8 +275,12 @@ function ConfigurationManager.parse_lua_literal(input)
 end
 
 function ConfigurationManager.display_value(key, value)
-  if key == "word_sense_model" and (value == nil or value == "") then
-    return "Use text model"
+  if (key == "word_sense_model" or key == "dictionary_model" or key == "explain_model")
+      and (value == nil or value == "") then
+    return "Use default text model"
+  end
+  if type(key) == "string" and key:match("_reasoning_effort$") and (value == nil or value == "") then
+    return "Use provider default"
   end
   if value == nil then
     return "Not set"

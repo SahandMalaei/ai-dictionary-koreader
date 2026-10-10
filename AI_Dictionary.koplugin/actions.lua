@@ -6,27 +6,12 @@ local DictionaryPrompt = require("dictionary_prompt")
 
 local Actions = {}
 
-local AI_EXPLAIN_WEB_SEARCH_PARAMETERS = {
-  plugins = {
-    {
-      id = "web",
-      max_results = 3,
-      search_prompt = "Use the web results only if it helps explain the selected text in the book context. Keep the answer concise.",
-    },
-  },
-  web_search_options = {
-    search_context_size = "low",
-  },
-}
-
 function Actions.explain(plugin, reader_highlight_instance)
   return plugin:Query(reader_highlight_instance, "AI Explain", false,
     "I'm reading '{title}' by '{author}'{chapter}. This is my highlighted text: \n'{selection}'\n" ..
     "This is the text context where it appears (use it only as a hint, and don't let it limit your scope): '...{context}...'\n" ..
-    "Use web search economically to identify or verify the book, character, place, term, reference, or allusion if that helps. " ..
     "Explain it and dive deep in relation to the book, and help me understand it better (like Amazon Kindle's X-Ray, but more concise). " ..
-    "No spoilers if it's fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep your explanation brief (under 90 words, ONLY ONE PARAGRAPH), and ask no questions at the end.",
-    AI_EXPLAIN_WEB_SEARCH_PARAMETERS)
+    "No spoilers if it's fiction. Use Markdown emphasis (*x*) when it helps understanding. Keep your explanation brief (under 90 words, ONLY ONE PARAGRAPH), and ask no questions at the end.")
 end
 
 function Actions.dictionary(plugin, reader_highlight_instance)
