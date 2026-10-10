@@ -1,9 +1,11 @@
 local Device = require("device")
+local logger = require("logger")
 
 local AudioPlayer = require("audio_player")
 local AndroidHttpWorker = require("android_http_worker")
 local BackgroundWorker = require("background_worker")
 local Pronunciation = require("pronunciation")
+local WavAudio = require("wav_audio")
 local REQUEST_TIMEOUT_SECONDS = require("constants").network.request_timeout_seconds
 
 local TTS = {}
@@ -53,15 +55,25 @@ function TTS.start_request(tts_request, play_when_ready)
   tts_request.status = "pending"
   tts_request.in_progress = true
   tts_request.err = nil
+  local request, request_err = Pronunciation.build_request(tts_request.text, tts_request.context)
+  if not request then
+    tts_request.status = "failed"
+    tts_request.in_progress = false
+    tts_request.err = request_err
+    tts_request.play_when_ready = false
+    logger.err("AI Dictionary TTS error:", request_err)
+    return
+  end
   local target_audio_path, path_err = Pronunciation.create_audio_path(
     tts_request.plugin_dir,
-    "mp3"
+    request.response_format
   )
   if not target_audio_path then
     tts_request.status = "failed"
     tts_request.in_progress = false
     tts_request.err = path_err
     tts_request.play_when_ready = false
+    logger.err("AI Dictionary TTS error:", path_err)
     return
   end
   tts_request.pending_audio_path = target_audio_path
@@ -83,7 +95,7 @@ function TTS.start_request(tts_request, play_when_ready)
     tts_request.err = err
     tts_request.play_when_ready = false
     os.remove(target_audio_path)
-    print("AI Dictionary TTS error: " .. tostring(err))
+    logger.err("AI Dictionary TTS error:", tostring(err))
   end
 
   local function finish_success()
@@ -104,6 +116,7 @@ function TTS.start_request(tts_request, play_when_ready)
     tts_request.status = "ready"
     tts_request.audio_path = completed_audio_path
     tts_request.err = nil
+    logger.dbg("AI Dictionary TTS: audio ready", completed_audio_path)
     if tts_request.play_when_ready then
       tts_request.play_when_ready = false
       AudioPlayer.play(tts_request.audio_path, tts_request.plugin_dir)
@@ -111,14 +124,7 @@ function TTS.start_request(tts_request, play_when_ready)
   end
 
   if Device.isAndroid and Device:isAndroid() then
-    local request, request_err = Pronunciation.build_request(
-      tts_request.text,
-      tts_request.context
-    )
-    if not request then
-      finish_failure(request_err)
-      return
-    end
+    logger.warn("AI Dictionary TTS: starting speech request")
     tts_request.cancel_synthesis = AndroidHttpWorker.start({
       url = request.url,
       method = "POST",
@@ -130,9 +136,14 @@ function TTS.start_request(tts_request, play_when_ready)
       timeout_seconds = REQUEST_TIMEOUT_SECONDS,
     }, {
       on_complete = function(code)
+        if finished or not is_current() then return end
         if code ~= 200 then
           finish_failure("Voice TTS failed: HTTP " .. tostring(code))
           return
+        end
+        if request.response_format == "pcm" then
+          local path, err = WavAudio.wrap_pcm_file(target_audio_path)
+          if not path then finish_failure(err); return end
         end
         completed_audio_path = target_audio_path
         finish_success()
@@ -143,14 +154,12 @@ function TTS.start_request(tts_request, play_when_ready)
   end
 
   tts_request.cancel_synthesis = BackgroundWorker.start(function(emit)
-    local data, response_format_or_err = Pronunciation.synthesize_data(
-      tts_request.text,
-      tts_request.context
-    )
+    local data, response_format_or_err = Pronunciation.synthesize_request(request)
     if data then
       local audio_path, write_err = Pronunciation.write_audio_file(
         target_audio_path,
-        data
+        data,
+        response_format_or_err
       )
       if audio_path then
         emit("P" .. audio_path)

@@ -3,6 +3,7 @@ local http = require("socket.http")
 local ltn12 = require("ltn12")
 local json = require("json")
 local lfs = require("libs/libkoreader-lfs")
+local WavAudio = require("wav_audio")
 
 local api_key = nil
 local success, result = pcall(function() return require("api_key") end)
@@ -77,27 +78,34 @@ local function write_binary_file(path, data)
     return false, err
   end
 
-  file:write(data)
-  file:close()
+  local written, write_err = file:write(data)
+  local closed, close_err = file:close()
+  if not written or not closed then return false, write_err or close_err end
   return true
 end
 
 function Pronunciation.create_audio_path(plugin_dir, response_format)
   plugin_dir = plugin_dir or "AI_Dictionary.koplugin"
   response_format = response_format or DEFAULT_RESPONSE_FORMAT
-  local audio_dir, audio_path = next_audio_path(plugin_dir, response_format)
+  local extension = response_format == "pcm" and "wav" or response_format
+  local audio_dir, audio_path = next_audio_path(plugin_dir, extension)
   if not ensure_dir(audio_dir) then
     return nil, "Could not create Audio directory: " .. tostring(audio_dir)
   end
   return audio_path
 end
 
-function Pronunciation.write_audio_file(audio_path, data)
+function Pronunciation.write_audio_file(audio_path, data, response_format)
   if not audio_path or audio_path == "" then
     return nil, "No destination was provided for TTS audio."
   end
   if type(data) ~= "string" or data == "" then
     return nil, "Voice TTS returned no audio data."
+  end
+  if response_format == "pcm" then
+    local wav, err = WavAudio.from_pcm(data)
+    if not wav then return nil, err end
+    data = wav
   end
   local write_ok, write_err = write_binary_file(audio_path, data)
   if not write_ok then
@@ -184,7 +192,11 @@ function Pronunciation.build_request(text, context)
     return nil, "No selected text to synthesize."
   end
 
+  -- OpenRouter rejects MP3 for Gemini TTS before forwarding to Google.
   local response_format = DEFAULT_RESPONSE_FORMAT
+  if configuration.voice_model:match("^google/gemini%-.*tts") then
+    response_format = "pcm"
+  end
   local voice = has_value(configuration.voice_voice) and configuration.voice_voice or get_default_voice(voice_endpoint)
   local instructions = DEFAULT_INSTRUCTIONS
   if has_value(context) then
@@ -203,16 +215,13 @@ function Pronunciation.build_request(text, context)
     url = voice_endpoint,
     authorization = "Bearer " .. api_key_value,
     content_type = "application/json",
-    accept = "audio/mpeg",
+    accept = response_format == "pcm" and "audio/pcm" or "audio/mpeg",
     body = request_body,
     response_format = response_format,
   }
 end
 
-function Pronunciation.synthesize_data(text, context)
-  local request, request_err = Pronunciation.build_request(text, context)
-  if not request then return nil, request_err end
-
+function Pronunciation.synthesize_request(request)
   local response_body = {}
   local ok, code = https.request {
     url = request.url,
@@ -237,10 +246,16 @@ function Pronunciation.synthesize_data(text, context)
   return body, request.response_format
 end
 
+function Pronunciation.synthesize_data(text, context)
+  local request, request_err = Pronunciation.build_request(text, context)
+  if not request then return nil, request_err end
+  return Pronunciation.synthesize_request(request)
+end
+
 function Pronunciation.save_audio(data, plugin_dir, response_format)
   local audio_path, path_err = Pronunciation.create_audio_path(plugin_dir, response_format)
   if not audio_path then return nil, path_err end
-  return Pronunciation.write_audio_file(audio_path, data)
+  return Pronunciation.write_audio_file(audio_path, data, response_format)
 end
 
 function Pronunciation.synthesize(text, plugin_dir, context)
