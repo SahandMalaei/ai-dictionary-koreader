@@ -60,21 +60,29 @@ You'll need [KOReader](https://koreader.rocks/), a network connection, and an AP
 To launch an AI lookup directly when you release a text selection, choose **AI Dictionary**, **AI Explain**, or **AI Simplify** in that same **Long-press on text** menu. Disable **Dictionary on single word selection** to apply your choice to single words as well. A very-long press still opens the selection popup. Choose **Ask with popup dialog** to return to the normal menu.
 
 ## Settings reference
-| Setting | Purpose / default |
+
+Settings below follow the plugin's settings menu order, after **Check for updates now**. Custom settings appear after the built-in settings; config-only settings are listed last here.
+
+| Setting | Purpose |
 | --- | --- |
-| `api_key` | Your provider's API key; shared by text and voice requests. |
-| `text_endpoint`, `text_model` | Full Chat Completions URL and default model ID. **text_model** is used by default for any text-based feature group whose model is blank. |
+| `update_check` | **Auto-check for updates:** toggle; checks at startup when enabled (`true` by default). |
 | `output_language` | Language of Dictionary, Explain, and experimental Word Sense definitions. The default is `"English"`. |
+| `images` | Show Wikipedia images in Dictionary and Explain (`true` by default). |
+| `api_key` | Your provider's API key; shared by text and voice requests. |
+| `text_endpoint` | Full Chat Completions URL. |
+| `text_model` | Default model ID, used by any text-based feature group whose model is blank. |
+| `dictionary_model` | Optional model for Dictionary + Simplify; `""` uses `text_model`. Shares the text endpoint and API key. |
+| `dictionary_reasoning_effort` | Reasoning effort for Dictionary + Simplify; `""` sends no automatic reasoning parameters. Select an effort or **Use provider default** in settings. Supported levels depend on the provider and model. |
+| `explain_model` | Optional model for Explain + reports; `""` uses `text_model`. Shares the text endpoint and API key. |
+| `explain_reasoning_effort` | Reasoning effort for Explain + reports; `""` uses the provider default. Supported levels depend on the provider and model. |
+| `voice_endpoint`, `voice_model`, `voice_voice` | Optional Android pronunciation settings. |
 | `word_sense_active` | Enable automatic Word Sense annotations; `false` by default. Toggle **Word Sense** in the plugin settings or set this to `true` in `configuration.lua`. |
 | `word_sense_level` | Word Sense reader proficiency: `"Basic"`, `"Intermediate"` (default), or `"Advanced"`. Choose from the reading-level list in the plugin settings. Basic provides the most help. |
-| `dictionary_model`, `explain_model`, `word_sense_model` | Optional models for Dictionary + Simplify, Explain + reports, and Word Sense. Each defaults to `""`, using `text_model`. All share the text endpoint and API key. |
-| `dictionary_reasoning_effort`, `explain_reasoning_effort`, `word_sense_reasoning_effort` | Separate reasoning controls for those groups; `""` sends no automatic reasoning parameters. Select an effort or **Use provider default** in settings. Supported levels depend on the provider and model. |
+| `word_sense_model` | Optional model for Word Sense; `""` uses `text_model`. Shares the text endpoint and API key. |
+| `word_sense_reasoning_effort` | Reasoning effort for Word Sense; `""` uses the provider default. Supported levels depend on the provider and model. |
+| `debug_mode` | Show the query prompt alongside the answer for troubleshooting (`false` by default). |
+| `additional_parameters` | Optional custom setting: a Lua table of extra request fields shared by all text features. Feature-specific JSON overrides shared fields with the same name. Appears in the menu when configured. |
 | `dictionary_parameters_json`, `explain_parameters_json`, `word_sense_parameters_json` | **Advanced:** Config-only strings containing extra JSON request fields for each group; `""` adds nothing. Hidden from the settings menu. |
-| `images` | Show Wikipedia images in Dictionary and Explain; `true`. |
-| `voice_endpoint`, `voice_model`, `voice_voice` | Optional Android pronunciation; see below. |
-| `update_check` | **Auto-check for updates:** toggle; checks at startup when enabled (`true` by default). |
-| `debug_mode` | Show the query prompt alongside the answer for troubleshooting; `false`. |
-| `additional_parameters` | Optional Lua table of extra text API request parameters supported by your provider. |
 
 ### Custom models and reasoning efforts
 
