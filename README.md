@@ -63,13 +63,13 @@ To launch an AI lookup directly when you release a text selection, choose **AI D
 | Setting | Purpose / default |
 | --- | --- |
 | `api_key` | Your provider's API key; shared by text and voice requests. |
-| `text_endpoint`, `text_model` | Full Chat Completions URL and default model ID; defaults shown above. **Default text model** is used by any feature group whose model is blank. |
-| `output_language` | Language of Dictionary, Explain, and experimental Word Sense definitions; `"English"`. Dictionary section labels remain English. |
+| `text_endpoint`, `text_model` | Full Chat Completions URL and default model ID. **text_model** is used by default for any text-based feature group whose model is blank. |
+| `output_language` | Language of Dictionary, Explain, and experimental Word Sense definitions. The default is `"English"`. |
 | `word_sense_active` | Enable automatic Word Sense annotations; `false` by default. Toggle **Word Sense** in the plugin settings or set this to `true` in `configuration.lua`. |
 | `word_sense_level` | Word Sense reader proficiency: `"Basic"`, `"Intermediate"` (default), or `"Advanced"`. Choose from the reading-level list in the plugin settings. Basic provides the most help. |
 | `dictionary_model`, `explain_model`, `word_sense_model` | Optional models for Dictionary + Simplify, Explain + reports, and Word Sense. Each defaults to `""`, using `text_model`. All share the text endpoint and API key. |
 | `dictionary_reasoning_effort`, `explain_reasoning_effort`, `word_sense_reasoning_effort` | Separate reasoning controls for those groups; `""` sends no automatic reasoning parameters. Select an effort or **Use provider default** in settings. Supported levels depend on the provider and model. |
-| `dictionary_parameters_json`, `explain_parameters_json`, `word_sense_parameters_json` | Config-only strings containing extra JSON request fields for each group; `""` adds nothing. Hidden from the settings menu. |
+| `dictionary_parameters_json`, `explain_parameters_json`, `word_sense_parameters_json` | **Advanced:** Config-only strings containing extra JSON request fields for each group; `""` adds nothing. Hidden from the settings menu. |
 | `images` | Show Wikipedia images in Dictionary and Explain; `true`. |
 | `voice_endpoint`, `voice_model`, `voice_voice` | Optional Android pronunciation; see below. |
 | `update_check` | **Auto-check for updates:** toggle; checks at startup when enabled (`true` by default). |
