@@ -200,6 +200,9 @@ function WordSense:scan()
   if self.closed or self.suspended or self.scan_failed then return end
   if self.page_signature ~= self:signature() then self:refresh(); return end
   if self:selecting() then self:schedule(0.3, function() self:scan() end); return end
+  for _, job in pairs(self.requests.jobs) do
+    if job.received then self:finished(job, job.chunk, job.response); return end
+  end
   if not self.viewport then
     local viewport = self.source:viewport()
     self:extract(function() return self.source:step_viewport(viewport) end, function()
@@ -229,12 +232,21 @@ function WordSense:wake()
 end
 
 function WordSense:finished(job, chunk, response)
-  if not self.requests:remove(job) then return end
+  if self.requests.jobs[job.key] ~= job then return end
+  if job.received then response = job.response end -- Ignore duplicate transport callbacks.
   -- Recheck the viewport before displaying anything; a page event may be pending.
   self:refresh()
   if self.closed or self.suspended or job.scope ~= self.scope then return end
+  -- Range verification clears crengine's selection, just like extraction. Keep
+  -- completed responses in the existing job pool until selection has ended.
+  if response ~= nil and self:selecting() then
+    job.received, job.response = true, response
+    self:wake()
+    return
+  end
+  if not self.requests:remove(job) then return end
   local entries, err
-  if response ~= nil then entries, err = Prompt.parse(response, chunk.words) end
+  if response ~= nil then entries, err = Prompt.parse(response, chunk.words, self.source) end
   if entries then
     self.cache:put(chunk, entries, self:protected(chunk))
     self:display()

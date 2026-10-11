@@ -1,4 +1,5 @@
 local json = require("json")
+local Anchor = require("word_sense_anchor")
 
 local Prompt = {}
 local LEVELS = {
@@ -23,8 +24,9 @@ function Prompt.messages(page, context, level, language)
         .. "Write each meaning in " .. language .. ", using ONE TO FIVE words, no headings or examples. "
         .. "The meaning you write should be in simple, clear, conversational language to paraphrase the selection using simpler terms."
         .. "For languages without spaces use an equally brief gloss. "
-        .. "Return ONLY JSON: {\"entries\":[{\"first\":12,\"last\":14,\"meaning\":\"stop resisting\"}]}. "
+        .. "Return ONLY JSON: {\"entries\":[{\"first\":12,\"last\":14,\"text\":\"give way\",\"meaning\":\"stop resisting\"}]}. "
         .. "first and last are inclusive token IDs for this exact occurrence. A single word uses equal IDs. "
+        .. "text must quote the exact selected word or expression as it appears in passage_text, preserving spelling and case; do not return a lemma or translation. "
         .. "Tokens can split punctuation or words at formatting boundaries or hyphenated line endings; use the passage text to interpret them. "
         .. "Use at most 12 tokens per expression, at most 40 entries, and no overlapping spans. "
         .. "Treat repeated occurrences separately when their meanings differ. Return {\"entries\":[]} if none qualify.",
@@ -42,7 +44,7 @@ local function clean_meaning(value)
   return value
 end
 
-function Prompt.validate(decoded, words)
+function Prompt.validate(decoded, words, source)
   if type(decoded) ~= "table" or type(decoded.entries) ~= "table" then
     return nil, "Expected a JSON object containing entries."
   end
@@ -51,7 +53,7 @@ function Prompt.validate(decoded, words)
       return nil, "Expected an array of vocabulary entries."
     end
   end
-  local entries, used = {}, {}
+  local entries, valid = {}, 0
   for i, item in ipairs(decoded.entries) do
     if i > 200 or #entries >= 40 then break end
     if type(item) == "table" then
@@ -59,36 +61,33 @@ function Prompt.validate(decoded, words)
       local meaning = clean_meaning(item.meaning)
       if type(first) == "number" and type(last) == "number"
           and first % 1 == 0 and last % 1 == 0 and first >= 1 and last >= first
-          and last <= #words and last - first < 12 and meaning then
+          and last <= #words and last - first < 12 and meaning
+          and type(item.text) == "string" and item.text:find("%S") then
+        valid = valid + 1
+        local entry = Anchor.resolve(source, words, first, last, item.text)
         local overlaps = false
-        for index = first, last do
-          if used[index] then overlaps = true; break end
+        for _, previous in ipairs(entries) do
+          if entry and Anchor.overlaps(source, entry, previous) then overlaps = true; break end
         end
-        if not overlaps then
-          entries[#entries + 1] = {
-            pos0 = words[first].pos0, pos1 = words[last].pos1, meaning = meaning,
-          }
-          if type(words[first].pos0) == "table" then
-            local positions = {}
-            for index = first, last do positions[#positions + 1] = words[index].pos0 end
-            entries[#entries].positions = positions
-          end
-          for index = first, last do used[index] = true end
+        if entry and not overlaps then
+          entry.meaning = meaning
+          entries[#entries + 1] = entry
         end
       end
     end
   end
-  -- An invalid response must not become a cached, apparently successful page.
-  if #decoded.entries > 0 and #entries == 0 then return nil, "No valid vocabulary entries." end
+  -- Malformed entries are failures. Valid but unmatched selections cache empty
+  -- coverage, so skipping an underline cannot cause repeated model requests.
+  if #decoded.entries > 0 and valid == 0 then return nil, "No valid vocabulary entries." end
   return entries
 end
 
-function Prompt.parse(response, words)
+function Prompt.parse(response, words, source)
   if type(response) ~= "string" or #response > 65536 then return nil, "Invalid vocabulary response." end
   local text = response:match("^%s*```%w*%s*(.-)%s*```%s*$") or response
   local ok, decoded = pcall(json.decode, text)
   if not ok then return nil, "Could not decode vocabulary JSON." end
-  return Prompt.validate(decoded, words)
+  return Prompt.validate(decoded, words, source)
 end
 
 return Prompt

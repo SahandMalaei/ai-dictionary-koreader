@@ -55,7 +55,7 @@ package.loaded.ai_query = function(messages, callbacks)
   if requests.start_error then error("could not start request") end
   if requests.synchronous_error then callbacks.on_error("offline") end
   if requests.synchronous_success then
-    decoded.response = { entries = { { first = 1, last = 1, meaning = "simple meaning" } } }
+    decoded.response = { entries = { { first = 1, last = 1, text = encoded.tokens[1].text, meaning = "simple meaning" } } }
     callbacks.on_done("response")
   end
   return function()
@@ -195,8 +195,17 @@ local function drain()
 end
 
 local function complete(request, entries)
-  decoded.response = { entries = entries or { { first = 1, last = 1, meaning = "large forest animal" } } }
-  request.callbacks.on_done("response")
+  entries = entries or { { first = 1, last = 1, meaning = "large forest animal" } }
+  for _, entry in ipairs(entries) do
+    if entry.text == nil then
+      local parts = {}
+      for i = entry.first, entry.last do parts[#parts + 1] = request.page.tokens[i].text end
+      entry.text = table.concat(parts, " ")
+    end
+  end
+  local response_key = "response " .. tostring(request)
+  decoded[response_key] = { entries = entries }
+  request.callbacks.on_done(response_key)
 end
 
 local function active_count(controller)
@@ -390,15 +399,15 @@ test("parser validates definitions, phrase spans, overlap and repeated words", f
   local doc = document({ { "bear", "give", "way", "bear" } })
   local page = Page.new(make_ui(doc)); assert(Page.step(doc, page, 24))
   decoded.valid = { entries = {
-    { first = 2, last = 3, meaning = "  stop\nresisting " },
-    { first = 1, last = 1, meaning = "forest animal" },
-    { first = 4, last = 4, meaning = "endure" },
-    { first = 2, last = 2, meaning = "overlap" },
+    { first = 2, last = 3, text = "give way", meaning = "  stop\nresisting " },
+    { first = 1, last = 1, text = "bear", meaning = "forest animal" },
+    { first = 4, last = 4, text = "bear", meaning = "endure" },
+    { first = 2, last = 2, text = "give", meaning = "overlap" },
     { first = 5, last = 5, meaning = "out of bounds" },
     { first = 1.5, last = 2, meaning = "fraction" },
     { first = 1, last = 1, meaning = "one two three four five six" },
   } }
-  local entries = assert(Prompt.parse("```json\nvalid\n```", page.words))
+  local entries = assert(Prompt.parse("```json\nvalid\n```", page.words, Reflowable.new(make_ui(doc))))
   assert(#entries == 3 and entries[1].meaning == "stop resisting")
   assert(entries[1].pos0 == "2s" and entries[1].pos1 == "3e")
   assert(entries[2].pos0 == "1s" and entries[3].pos0 == "4s")
@@ -411,6 +420,38 @@ test("parser validates definitions, phrase spans, overlap and repeated words", f
   local messages = Prompt.messages(page, "context", "Basic", "Persian")
   assert(messages[1].content:find("Persian", 1, true) and messages[1].content:find("basic proficiency", 1, true))
   assert(encoded.tokens[4].id == 4 and encoded.tokens[4].text == "bear")
+  assert(messages[1].content:find('"text":"give way"', 1, true))
+end)
+
+test("unmatched selections are cached without underlines or retry loops", function()
+  local controller, ui = start({ { "bear" } }); drain()
+  complete(requests[1], { { first = 1, last = 1, text = "missing", meaning = "no match" } })
+  drain()
+  assert(#controller.overlay.boxes == 0 and #controller.cache.order == 1 and #warnings == 0)
+  controller:refresh(true); drain()
+  assert(#requests == 1 and #controller.overlay.boxes == 0)
+  controller:close()
+end)
+
+test("verification waits for selection and cancelled completed responses stay discarded", function()
+  local controller, ui = start({ { "bear" } }); drain()
+  ui.document.selection_active, ui.highlight.hold_pos = true, {}
+  local reads = ui.document.reads
+  complete(requests[1]); tick()
+  requests[1].callbacks.on_error("late transport error")
+  assert(ui.document.reads == reads and #controller.overlay.boxes == 0 and active_count(controller) == 1)
+  ui.document.selection_active, ui.highlight.hold_pos = false, nil
+  drain()
+  assert(#controller.overlay.boxes == 1 and active_count(controller) == 0)
+  controller:close()
+
+  controller, ui = start({ { "bear" } }); drain()
+  ui.document.selection_active, ui.highlight.hold_pos = true, {}
+  complete(requests[#requests]); tick()
+  controller:suspend()
+  ui.document.selection_active, ui.highlight.hold_pos = false, nil
+  assert(not next(scheduled) and active_count(controller) == 0)
+  controller:close()
 end)
 
 test("priority protects nearer work, and cancel callbacks cannot release replacement jobs", function()
@@ -958,6 +999,58 @@ local function pdf_line(texts, y, x)
   return line
 end
 
+test("fixed text endpoints correct by five Unicode characters in either direction", function()
+  for _, padding in ipairs({ "four", "éééé", "漢漢漢漢" }) do
+    local source = Fixed.new(pdf_ui({ { pdf_line({ padding, "target", padding }, 10) } }))
+    local words = source:read_page(1)
+    local entries = assert(Prompt.validate({ entries = {
+      { first = 1, last = 3, text = "target", meaning = "goal" },
+    } }, words, source))
+    assert(#entries == 1 and entries[1].pos0.index == 2 and entries[1].pos1.index == 2)
+    assert(#entries[1].positions == 1)
+    entries = assert(Prompt.validate({ entries = {
+      { first = 2, last = 2, text = padding .. " target " .. padding, meaning = "goal" },
+    } }, words, source))
+    assert(#entries == 1 and entries[1].pos0.index == 1 and entries[1].pos1.index == 3)
+    assert(#entries[1].positions == 3 and #source:boxes(entries, 600, 800) == 3)
+  end
+end)
+
+test("fixed text skips matches beyond five characters, ambiguous words and partial boxes", function()
+  for _, texts in ipairs({ { "fives", "target", "four" }, { "four", "target", "fives" },
+    { "ééééé", "target", "four" } }) do
+    local source = Fixed.new(pdf_ui({ { pdf_line(texts, 10) } }))
+    local entries = assert(Prompt.validate({ entries = {
+      { first = 1, last = 3, text = "target", meaning = "goal" },
+    } }, source:read_page(1), source))
+    assert(#entries == 0)
+  end
+  local source = Fixed.new(pdf_ui({ { pdf_line({ "cat", "x", "cat" }, 10) } }))
+  assert(#assert(Prompt.validate({ entries = {
+    { first = 2, last = 2, text = "cat", meaning = "animal" },
+  } }, source:read_page(1), source)) == 0)
+  source = Fixed.new(pdf_ui({ { pdf_line({ "target." }, 10) } }))
+  assert(#assert(Prompt.validate({ entries = {
+    { first = 1, last = 1, text = "target", meaning = "goal" },
+  } }, source:read_page(1), source)) == 0)
+end)
+
+test("several completed responses wait together without clearing a live selection", function()
+  local controller, ui = ready(paragraph_pages(4))
+  turn(controller, ui, 2)
+  local first, second = requests[1], requests[2]
+  ui.document.selection_active, ui.highlight.hold_pos = true, {}
+  complete(first, { { first = 1, last = 1, meaning = "first meaning" } })
+  complete(second, { { first = 1, last = 1, meaning = "second meaning" } })
+  tick()
+  assert(#controller.cache.order == 0)
+  ui.document.selection_active, ui.highlight.hold_pos = false, nil
+  drain()
+  assert(#controller.cache.order == 2 and #controller.overlay.boxes == 1)
+  assert(controller.overlay.boxes[1].entry.meaning == "second meaning")
+  controller:close()
+end)
+
 test("PDF chunks preserve paragraph boundaries and native occurrence coordinates", function()
   local ui = pdf_ui({ { pdf_line(vocabulary(150), 10), pdf_line(vocabulary(150), 50),
     pdf_line({ "extra" }, 90), pdf_line({ "excluded" }, 130) } })
@@ -966,7 +1059,9 @@ test("PDF chunks preserve paragraph boundaries and native occurrence coordinates
   while not Chunk.step(chunk) do end
   assert(chunk.count == 301 and #chunk.words == 301 and chunk.pos0.index == 1)
   assert(chunk.context:find("\n\n", 1, true) and not chunk.context:find("excluded", 1, true))
-  local entries = assert(Prompt.validate({ entries = { { first = 149, last = 152, meaning = "simple meaning" } } }, chunk.words))
+  local entries = assert(Prompt.validate({ entries = { { first = 149, last = 152,
+    text = source:text({ chunk.words[149], chunk.words[150], chunk.words[151], chunk.words[152] }),
+    meaning = "simple meaning" } } }, chunk.words, source))
   assert(#entries[1].positions == 4 and entries[1].pos0.page == 1)
 end)
 
@@ -976,7 +1071,7 @@ test("PDF continuation across physical pages includes the whole paragraph", func
   local chunk = Chunk.new(source, source:word(2, 1))
   while not Chunk.step(chunk) do end
   assert(chunk.words[1].text == "give" and chunk.words[2].text == "way" and chunk.count == 303)
-  local entries = assert(Prompt.validate({ entries = { { first = 1, last = 2, meaning = "stop resisting" } } }, chunk.words))
+  local entries = assert(Prompt.validate({ entries = { { first = 1, last = 2, text = "give way", meaning = "stop resisting" } } }, chunk.words, source))
   assert(#entries[1].positions == 2)
   assert(#source:boxes(entries, 600, 800) == 1)
   ui.view.state.page = 2
