@@ -17,6 +17,7 @@ The Project is currently hosted on [GitHub](https://github.com/SahandMalaei/ai-d
 - The plugin is supposed to run on every OS KOReader supports, yet some of its features will naturally not work everywhere.
 - Adopt a defensive approach in that all the code must be safe, ideally with no errors causing KOReader to crash. We need good error-handling to catch exceptions wherever they arise, so they don't propagate into KOReader.
 - Design for reusability and long-term project development, rather than using quick fixes. Keep in mind that the project is going to expand and be under development for a long time, and the structure must remain robust no matter how many new features are added.
+- Prefer lean, understandable code over bloat.
 ## Validation
 After completing a set of changes:
 1. Run LuaJIT syntax checks on every modified Lua file.
